@@ -1,17 +1,37 @@
 import sys, traceback
 
-from PyQt5.QtWidgets import QTableWidget, QTableWidgetItem, QHeaderView, QStyle
-from PyQt5.QtCore import Qt
-from PyQt5.QtGui import QIcon
+from PyQt5.QtWidgets import QWidget, QTableWidget, QTableWidgetItem, QHeaderView, QStyle
+from PyQt5.QtCore import Qt , QRect
+from PyQt5.QtGui import QIcon , QPainter , QPixmap
 
 import logging
 
 active_col = {"col": 0, "header": "Active"}
 name_col = {"col": 1, "header": "Name"}
 rect_col = {"col": 2, "header": "Rect"}
-remove_col = {"col": 3, "header": "Del"}
+img_col = {"col": 3, "header": "Img"}
+remove_col = {"col": 4, "header": "Del"}
 
-cols = [active_col, name_col,rect_col,remove_col]
+cols = [active_col, name_col,rect_col,img_col,remove_col]
+
+
+
+class ImageWidget(QWidget):
+
+    def __init__(self, image, parent):
+        super(ImageWidget, self).__init__(parent)
+        self.image = image
+        self.setFixedWidth(100)
+        self.parent=parent
+
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        target=  QRect(0,0,self.width(), self.height())
+        source=  QRect(0,0,self.image.width(), self.image.height())
+
+        painter.drawPixmap(target, self.image, source)
+
 
 
 class RectTableWidget(QTableWidget):
@@ -38,27 +58,32 @@ class RectTableWidget(QTableWidget):
     def update_table_widget(self):
         try:
 
-            if not len(self.app.rects) == self.rowCount():
+            if not len(self.app.slices) == self.rowCount():
 
-                self.logger.debug(f"{len(self.app.rects)} != {self.rowCount()}")
+                self.logger.debug(f"{len(self.app.slices)} != {self.rowCount()}")
 
-                present_in_tablewidget = [False for i in range(len(self.app.rects))]
+                present_in_tablewidget = [False for i in range(len(self.app.slices))]
                 present_in_active_rect = [False for i in range(self.rowCount())]
-                for i, rect in enumerate(self.app.rects):
+                for i, slice in enumerate(self.app.slices):
                     for j in range(self.rowCount()):
                         self.logger.debug(
-                            f"{i} {j} {self.item(j, name_col['col']).text()}  {self.item(j, 0).rect == rect} ")
-                        if self.item(j, name_col['col']).rect == rect:
+                            f"{i} {j} {self.item(j, name_col['col']).text()}  {self.item(j, name_col['col']).slice == slice} ")
+                        if self.item(j, name_col['col']).slice == slice:
                             present_in_tablewidget[i] = True
                             present_in_active_rect[j] = True
 
-                for i, rect in enumerate(self.app.rects):
+                for i, slice in enumerate(self.app.slices):
                     if not present_in_tablewidget[i]:
                         row_to_add = self.rowCount()
                         self.setRowCount(row_to_add + 1)
-                        item = QTableWidgetItem(f"{rect.meta['name']}")
-                        item.rect = rect
+                        self.setRowHeight(row_to_add, 100)
+                        item = QTableWidgetItem(f"{slice.id}")
+                        item.slice = slice
                         self.setItem(row_to_add, name_col['col'], item)
+
+                        item = QTableWidgetItem(f"{list(slice.rect.getCoords())}")
+                        item.slice = slice
+                        self.setItem(row_to_add, rect_col['col'], item)
 
                         # checkBoxItem = QTableWidgetItem()
                         # checkBoxItem.setFlags(Qt.ItemIsUserCheckable | Qt.ItemIsEnabled)
@@ -75,9 +100,22 @@ class RectTableWidget(QTableWidget):
                         # self.setItem(row_to_add, active_col['col'], activeItem)
 
 
+
+
+                        self.setCellWidget(row_to_add, img_col['col'], ImageWidget(image = self.app.macro_photo.copy(slice.rect), parent = self))
+
+                        # i = QIcon()
+                        # i.addPixmap()
+                        #
+                        #
+                        # item.setIcon(i)
+                        # item.slice = slice
+                        # self.setItem(row_to_add, img_col['col'], item)
+
+
                         remove_item = QTableWidgetItem("")
                         remove_item.setIcon(self.style().standardIcon(getattr(QStyle, "SP_TrashIcon")))
-                        remove_item.rect = rect
+                        remove_item.slice = slice
                         self.setItem(row_to_add, remove_col['col'], remove_item)
 
                 self.setHorizontalHeaderLabels(self.headers)
@@ -92,7 +130,7 @@ class RectTableWidget(QTableWidget):
 
             for j in range(self.rowCount()):
                 if not self.item(j, name_col['col']) is None:
-                    rect = self.item(j, name_col['col']).rect
+                    slice = self.item(j, name_col['col']).slice
 
                     # if hasattr(rect, "iou"):
                     #     self.item(j, iou_col['col']).setText(f"{rect.iou:.3}")
@@ -109,11 +147,11 @@ class RectTableWidget(QTableWidget):
                     # else:
                     #     self.item(j, visible_3d_col['col']).setCheckState(Qt.Unchecked)
 
-                    if self.item(j, name_col['col']).rect == self.app.active_rect:
-                        self.item(j, active_col['col']).setIcon(
-                            self.style().standardIcon(getattr(QStyle, "SP_DialogApplyButton")))
-                    else:
-                        self.item(j, active_col['col']).setIcon(QIcon())
+                    # if self.item(j, name_col['col']).rect == self.app.active_slice:
+                    #     self.item(j, active_col['col']).setIcon(
+                    #         self.style().standardIcon(getattr(QStyle, "SP_DialogApplyButton")))
+                    # else:
+                    #     self.item(j, active_col['col']).setIcon(QIcon())
                 else:
                     self.logger.warning(f" Weird: self.item({j},{name_col['col']}) is None")
 
@@ -125,28 +163,21 @@ class RectTableWidget(QTableWidget):
     def cell_pressed(self, row, col):
         if col == active_col['col']:
             self.logger.info(f"activate  {row}")
-            self.app.set_active_contour(self.item(row, name_col['col']).rect)
+            self.app.set_active_contour(self.item(row, name_col['col']).slice)
 
     def cell_clicked(self, row, col):
         try:
             self.logger.debug(f"clicked  {row},  {col}")
             item = self.item(row, col)
             if col == name_col['col']:
-                self.logger.info(f"{item.rect.meta}")
+                self.logger.info(f"{item.slice.rect}")
 
 
             if col == remove_col['col']:
-                confirmed = True
-                if not confirmed:
-                    confirmed = self.app.gui.Yes_Cancel(
-                        f"Are you sure you want to delete {item.rect.meta['name']} ?") == "Yes"
-                if confirmed:
-                    self.app.active_rect.rects.remove_rect(rect=item.rect)
-                    self.removeRow(row)
-                    self.app.gui.update_tabs_contents()
+                id = item.slice.id
+                self.removeRow(row)
+                self.app.delete_slice(id=id)
 
-                else:
-                    self.logger.info("Cancelling removal")
         except:
             self.logger.error(sys.exc_info()[0])
             self.logger.error(traceback.format_exc())
