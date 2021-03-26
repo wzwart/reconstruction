@@ -21,8 +21,8 @@ class ImageWidget(QWidget):
     def __init__(self, image, parent):
         super(ImageWidget, self).__init__(parent)
         self.image = image
-        self.setFixedWidth(100)
         self.parent=parent
+        self.setFixedWidth(self.parent.image_width)
 
 
     def paintEvent(self, event):
@@ -38,6 +38,13 @@ class RectTableWidget(QTableWidget):
 
     def __init__(self, app, logger=None):
         self.num_cols = len(cols)
+
+        self.image_width = 300
+        self.image_height = 300
+
+
+
+
         self.headers = [""] * self.num_cols
         for col in cols:
             self.headers[col["col"]] = col["header"]
@@ -57,14 +64,15 @@ class RectTableWidget(QTableWidget):
 
     def update_table_widget(self):
         try:
+            slices = self.app.reconstruction.slices
+            macro_photo=self.app.reconstruction.macro_photo
+            if not len(slices) == self.rowCount():
 
-            if not len(self.app.slices) == self.rowCount():
+                self.logger.debug(f"{len(slices)} != {self.rowCount()}")
 
-                self.logger.debug(f"{len(self.app.slices)} != {self.rowCount()}")
-
-                present_in_tablewidget = [False for i in range(len(self.app.slices))]
+                present_in_tablewidget = [False for i in range(len(slices))]
                 present_in_active_rect = [False for i in range(self.rowCount())]
-                for i, slice in enumerate(self.app.slices):
+                for i, slice in enumerate(slices):
                     for j in range(self.rowCount()):
                         self.logger.debug(
                             f"{i} {j} {self.item(j, name_col['col']).text()}  {self.item(j, name_col['col']).slice == slice} ")
@@ -72,11 +80,11 @@ class RectTableWidget(QTableWidget):
                             present_in_tablewidget[i] = True
                             present_in_active_rect[j] = True
 
-                for i, slice in enumerate(self.app.slices):
+                for i, slice in enumerate(slices):
                     if not present_in_tablewidget[i]:
                         row_to_add = self.rowCount()
                         self.setRowCount(row_to_add + 1)
-                        self.setRowHeight(row_to_add, 100)
+                        self.setRowHeight(row_to_add, self.image_height)
                         item = QTableWidgetItem(f"{slice.id}")
                         item.slice = slice
                         self.setItem(row_to_add, name_col['col'], item)
@@ -85,33 +93,10 @@ class RectTableWidget(QTableWidget):
                         item.slice = slice
                         self.setItem(row_to_add, rect_col['col'], item)
 
-                        # checkBoxItem = QTableWidgetItem()
-                        # checkBoxItem.setFlags(Qt.ItemIsUserCheckable | Qt.ItemIsEnabled)
-                        # checkBoxItem.rect = rect
-                        # self.setItem(row_to_add, visible_2d_col['col'], checkBoxItem)
-                        #
-                        # checkBoxItem = QTableWidgetItem()
-                        # checkBoxItem.setFlags(Qt.ItemIsUserCheckable | Qt.ItemIsEnabled)
-                        # checkBoxItem.rect = rect
-                        # self.setItem(row_to_add, visible_3d_col['col'], checkBoxItem)
-                        #
-                        # activeItem = QTableWidgetItem()
-                        # activeItem.rect = rect
-                        # self.setItem(row_to_add, active_col['col'], activeItem)
-
-
-
-
-                        self.setCellWidget(row_to_add, img_col['col'], ImageWidget(image = self.app.macro_photo.copy(slice.rect), parent = self))
-
-                        # i = QIcon()
-                        # i.addPixmap()
-                        #
-                        #
-                        # item.setIcon(i)
-                        # item.slice = slice
-                        # self.setItem(row_to_add, img_col['col'], item)
-
+                        item = QTableWidgetItem(f"")
+                        item.slice = slice
+                        self.setItem(row_to_add, img_col['col'], item)
+                        self.setCellWidget(row_to_add, img_col['col'], ImageWidget(image = macro_photo.copy(slice.rect), parent = self))
 
                         remove_item = QTableWidgetItem("")
                         remove_item.setIcon(self.style().standardIcon(getattr(QStyle, "SP_TrashIcon")))
@@ -169,8 +154,10 @@ class RectTableWidget(QTableWidget):
         try:
             self.logger.debug(f"clicked  {row},  {col}")
             item = self.item(row, col)
-            if col == name_col['col']:
+            if col in  [name_col['col'], img_col['col']] :
                 self.logger.info(f"{item.slice.rect}")
+                self.app.set_active_slice(item.slice)
+
 
 
             if col == remove_col['col']:

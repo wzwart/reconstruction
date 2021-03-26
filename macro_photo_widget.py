@@ -6,7 +6,7 @@ from PyQt5.QtWidgets import QLabel , QRubberBand
 from PyQt5.QtGui import QPixmap, QColor , QPainter
 
 
-class MacroFotoWidget(QLabel):
+class MacroPhotoWidget(QLabel):
 
     def __init__(self, parent=None, app=None):
 
@@ -47,7 +47,6 @@ class MacroFotoWidget(QLabel):
             self.app.add_slice(rect)
             self.paint()
 
-
     def paint(self):
 
         try:
@@ -56,23 +55,19 @@ class MacroFotoWidget(QLabel):
 
             painter = QPainter()
             painter.begin(pixmap_bg)
-            size_draw=QSize(min(self.width(),self.app.macro_photo.size().width()),min(self.height(),self.app.macro_photo.size().height()) )
-            self.logger.info(f"Hi {size_draw}")
+            photo=self.app.reconstruction.macro_photo
+            size_draw=QSize(min(self.width(),photo.size().width()),min(self.height(),photo.size().height()) )
 
             painter.setPen(Qt.red)
-
             font = painter.font()
             font.setPixelSize(48)
-
             painter.setFont(font)
 
+            painter.drawPixmap(QRect(QPoint(0,0),size_draw), photo, QRect(QPoint(0,0),size_draw))
 
-            painter.drawPixmap(QRect(QPoint(0,0),size_draw), self.app.macro_photo, QRect(QPoint(0,0),size_draw))
-
-            for slice in self.app.slices:
+            for slice in self.app.reconstruction.slices:
                 painter.drawRect(slice.rect)
                 coords=slice.rect.getCoords()
-
                 painter.drawText(QPoint(coords[0],coords[3]), str(slice.id))
 
             painter.end()
