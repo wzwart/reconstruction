@@ -3,7 +3,7 @@ import traceback
 
 from PyQt5.QtCore import QPoint, QRect, QSize, Qt
 from PyQt5.QtWidgets import QLabel , QRubberBand ,QApplication
-from PyQt5.QtGui import QPixmap, QColor , QPainter, QPolygon
+from PyQt5.QtGui import QPixmap, QColor , QPainter, QPolygon, QBrush
 
 
 class SlicePhotoWidget(QLabel):
@@ -14,30 +14,57 @@ class SlicePhotoWidget(QLabel):
         self.app=app
         self.logger = app.logger
         self.rubberBand = QRubberBand(QRubberBand.Rectangle, self)
-
+        self.setMouseTracking(True)
         self.origin = QPoint()
         self.slice = None
         self.paint()
 
 
 
+    def mouseMoveEvent(self, event) :
+        try:
+
+            modifiers = QApplication.keyboardModifiers()
+            control = bool(modifiers & Qt.ControlModifier)
+
+
+            if event.buttons() & Qt.LeftButton:
+                self.slice.add_to_trace(event.pos())
+                self.logger.info(f"{event.pos()}")
+                self.paint()
+        except:
+            self.logger.error(sys.exc_info()[0])
+            self.logger.error(traceback.format_exc())
+            pass
+
+
+
+
+
+
+
+    def mouseReleaseEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            self.slice.end_trace()
 
     def mousePressEvent(self, event):
 
         modifiers = QApplication.keyboardModifiers()
         control = bool(modifiers & Qt.ControlModifier)
 
-        if event.button() == Qt.LeftButton:
-
-            point = QPoint(event.pos())
-            if control:
-                self.slice.inner_points.append(point)
-            else:
-                self.slice.outer_points.append(point)
-            self.paint()
+        # if event.button() == Qt.LeftButton:
+        #
+        #
+        #     point = QPoint(event.pos())
+        #     if control:
+        #         self.slice.inner_points.append(point)
+        #     else:
+        #         self.slice.outer_points.append(point)
+        #     self.paint()
 
     def set_slice(self,slice):
         self.slice=slice
+
 
 
 
@@ -52,19 +79,7 @@ class SlicePhotoWidget(QLabel):
 
 
             if not self.slice is None:
-                photo=self.slice.slice_photo
-                size_draw=QSize(min(self.width(),photo.width()),min(self.height(),photo.height()))
-
-
-
-                painter.drawPixmap(QRect(QPoint(0,0),size_draw), photo, QRect(QPoint(0,0),size_draw))
-
-                painter.setPen(Qt.green)
-                painter.drawPolygon(QPolygon(self.slice.inner_points))
-                painter.setPen(Qt.blue)
-                painter.drawPolygon(QPolygon(self.slice.outer_points))
-
-
+                self.slice.paint(painter=painter, size=self.size())
 
             painter.end()
             self.setPixmap(pixmap_bg)

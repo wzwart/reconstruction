@@ -3,7 +3,7 @@ import traceback
 
 from PyQt5.QtCore import QPoint, QRect, QSize, Qt
 from PyQt5.QtWidgets import QLabel , QRubberBand
-from PyQt5.QtGui import QPixmap, QColor , QPainter
+from PyQt5.QtGui import QPixmap, QColor , QPainter , QKeyEvent
 
 
 class MacroPhotoWidget(QLabel):

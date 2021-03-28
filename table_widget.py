@@ -157,7 +157,7 @@ class RectTableWidget(QTableWidget):
             if col in  [name_col['col'], img_col['col']] :
                 self.logger.info(f"{item.slice.rect}")
                 self.app.set_active_slice(item.slice)
-
+                self.app.gui.tabs.setCurrentIndex(1)
 
 
             if col == remove_col['col']:

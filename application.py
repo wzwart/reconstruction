@@ -7,6 +7,12 @@ from reconstruction import Reconstruction
 from reconstruction import Slice
 
 
+class GuiLogger(logging.Handler):
+    def emit(self, record):
+        self.edit.append(self.format(record))  # implementation of append_line omitted
+
+
+
 class Application():
     def __init__(self, gui ):
 
@@ -16,8 +22,12 @@ class Application():
         self.logger = logging.getLogger('session data main')
         self.logger.setLevel(logging.DEBUG)
 
+        h = GuiLogger()
+        h.edit = self.gui.logger_box  # this should be done in __init__
+        logging.getLogger().addHandler(h)
+
         ch = logging.StreamHandler(sys.stdout)
-        ch.setLevel(logging.INFO)
+        ch.setLevel(logging.DEBUG)
         formatter = logging.Formatter('%(levelname)s - %(message)s')
         ch.setFormatter(formatter)
 
@@ -57,6 +67,12 @@ class Application():
         self.active_slice=slice
         self.logger.info(f"setting slice to {self.active_slice.id}")
         self.gui.slice_photo_widget.set_slice(slice=self.active_slice)
-        self.gui.tabs.setCurrentIndex(2)
         self.gui.update()
 
+    def remove_latest_trace_from_active_slice(self):
+        self.active_slice.remove_latest_trace()
+        self.gui.update()
+
+    def load_reconstruction_from_pickle(self,file_name):
+        self.reconstruction = Reconstruction.load_from_pickle(file_name=file_name, parent=self, logger=self.logger, path_macro_photo=r".\macro_photos\macro_1.jpg")
+        self.gui.update()
