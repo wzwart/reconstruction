@@ -11,10 +11,9 @@ import pandas as pd
 
 
 APITOKEN= "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJOYW1lIjoiV2ltIEFQSSBhY2Nlc3MiLCJJRCI6IjQwIiwiVmVyc2lvbiI6IjEuMCIsIkNhbkNyZWF0ZVVwbG9hZEZvbGRlcnMiOiJGYWxzZSIsIkNhblVwbG9hZCI6IkZhbHNlIiwiQ2FuRG93bmxvYWRTbGlkZXMiOiJUcnVlIiwiQ2FuRGVsZXRlU2xpZGVzIjoiRmFsc2UiLCJDYW5VcGxvYWRPbmx5SW5Gb2xkZXJzIjoiIiwiQ2FuUmVhZE9ubHlTdHVkaWVzIjoiIiwiQ2FuTW9kaWZ5T25seVN0dWRpZXMiOiIiLCJDYW5HZXRDb25maWciOiJUcnVlIiwiQ2FuR2V0UGl4ZWxzIjoiVHJ1ZSIsIkNhblVwbG9hZFNjb3JlcyI6IkZhbHNlIiwiQ2FuQ3JlYXRlU3R1ZGllcyI6IkZhbHNlIiwiQ2FuUmVpbXBvcnRTdHVkaWVzIjoiRmFsc2UiLCJDYW5EZWxldGVPd25lZFN0dWRpZXMiOiJGYWxzZSIsIkNhbkdldFNjb3JlcyI6IlRydWUiLCJDYW5HZXRBbnlTY29yZXMiOiJUcnVlIiwibmJmIjoxNjE2NDkxNTE1LCJleHAiOjE2NDc5OTAwMDAsImlhdCI6MTYxNjQ5MTUxNX0.duMtd4ZHkyfDSEP2E5MHvnamggZutoCFuYuARn_M_xo"
-
 # replace the URL and APITOKEN
 api = APIClient('https://slidescore.angiogenesis-analytics.nl', APITOKEN)
-print(dir(api))
+
 
 
 
@@ -26,10 +25,31 @@ user = "wim.zwart@angiogenesis-analytics.nl"
 imageid = 474
 caseid = 13
 
-for r in api.get_results(studyid, question, user, imageid, caseid):
+for r in api.get_results(studyid=studyid, question=question, email=user, imageid=imageid, caseid=caseid):
    print(r.toRow().split('\t'))
 # export annotation into an XML format (this one is used by ASAP https://github.com/computationalpathologygroup/ASAP
 
+
+response = api.perform_request("Scores", {"studyid": studyid, "question": question, "email": user, "imageid": None,
+                                           "caseid": caseid})
+rjson = response.json()
+
+
+print("---_")
+# print(rjson)
+imgageIDs=set()
+caseName=""
+for r in rjson:
+   if not len(caseName)>0:
+      caseName = r['caseName']
+   elif caseName != r['caseName']:
+      print(f"inconsistent casename {r['caseName']}")
+
+   imgageIDs.add(r['imageID'])
+
+print("---_")
+
+print(caseName, imgageIDs)
 
 USE_ASAP=False
 if USE_ASAP:
@@ -108,7 +128,7 @@ zoom_level=1
 rect=[[2,2],[512,512]]
 
 
-zoom_level=1
+zoom_level=4
 rect=[[10000,10000],[14023,14103]]
 
 

@@ -20,7 +20,7 @@ class MacroPhotoWidget(QLabel):
         self.origin = QPoint()
 
         self.setFixedWidth(int(screen_size.width()*.8))
-        self.setFixedHeight(int(screen_size.height()*.8))
+        self.setFixedHeight(int(screen_size.height()*.95))
         self.paint()
 
 

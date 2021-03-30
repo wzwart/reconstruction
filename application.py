@@ -12,7 +12,6 @@ class GuiLogger(logging.Handler):
         self.edit.append(self.format(record))  # implementation of append_line omitted
 
 
-
 class Application():
     def __init__(self, gui ):
 
@@ -43,7 +42,7 @@ class Application():
         self.logger.addHandler(ch_file)
 
         self.reconstruction=Reconstruction(parent=self,logger=self.logger)
-        self.reconstruction.set_macro_photo(path_macro_photo=r".\macro_photos\macro_1.jpg")
+        self.reconstruction.set_macro_photo(path_macro_photo=r".\macro_photos\Patient 1 Macrofoto anoniem.jpg")
 
 
     def add_slice(self, rect):
@@ -66,6 +65,7 @@ class Application():
     def set_active_slice(self,slice):
         self.active_slice=slice
         self.logger.info(f"setting slice to {self.active_slice.id}")
+        self.gui.slice_photo_widget.set_show_taces(True)
         self.gui.slice_photo_widget.set_slice(slice=self.active_slice)
         self.gui.update()
 
@@ -75,4 +75,9 @@ class Application():
 
     def load_reconstruction_from_pickle(self,file_name):
         self.reconstruction = Reconstruction.load_from_pickle(file_name=file_name, parent=self, logger=self.logger, path_macro_photo=r".\macro_photos\macro_1.jpg")
+        self.gui.update()
+
+    def calc_mask(self):
+        self.active_slice.calc_mask()
+        self.gui.slice_photo_widget.set_show_taces(False)
         self.gui.update()

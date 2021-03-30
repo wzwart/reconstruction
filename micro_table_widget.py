@@ -6,13 +6,12 @@ from PyQt5.QtGui import QIcon , QPainter , QPixmap
 
 import logging
 
-active_col = {"col": 0, "header": "Active"}
-name_col = {"col": 1, "header": "Name"}
-rect_col = {"col": 2, "header": "Rect"}
-img_col = {"col": 3, "header": "Img"}
-remove_col = {"col": 4, "header": "Del"}
+name_col = {"col": 0, "header": "Image_ID"}
+rect_col = {"col": 1, "header": "Rect"}
+img_col = {"col": 2, "header": "Img"}
 
-cols = [active_col, name_col,rect_col,img_col,remove_col]
+
+cols = [ name_col,rect_col,img_col]
 
 
 
@@ -34,16 +33,13 @@ class ImageWidget(QWidget):
 
 
 
-class RectTableWidget(QTableWidget):
+class MicroTableWidget(QTableWidget):
 
     def __init__(self, app, logger=None):
         self.num_cols = len(cols)
 
         self.image_width = 300
         self.image_height = 300
-
-
-
 
         self.headers = [""] * self.num_cols
         for col in cols:
@@ -60,48 +56,46 @@ class RectTableWidget(QTableWidget):
         self.app = app
 
         self.cellClicked.connect(self.cell_clicked)
-        self.cellPressed.connect(self.cell_pressed)
+
 
     def update_table_widget(self):
         try:
-            slices = self.app.reconstruction.slices
+            micro_photos = self.app.reconstruction.micro_photos
             macro_photo=self.app.reconstruction.macro_photo
-            if not len(slices) == self.rowCount():
+            if not len(micro_photos) == self.rowCount():
 
-                self.logger.debug(f"{len(slices)} != {self.rowCount()}")
+                self.logger.debug(f"{len(micro_photos)} != {self.rowCount()}")
 
-                present_in_tablewidget = [False for i in range(len(slices))]
+                present_in_tablewidget = [False for i in range(len(micro_photos))]
                 present_in_active_rect = [False for i in range(self.rowCount())]
-                for i, slice in enumerate(slices):
+                for i, micro_photo in enumerate(micro_photos):
                     for j in range(self.rowCount()):
                         self.logger.debug(
-                            f"{i} {j} {self.item(j, name_col['col']).text()}  {self.item(j, name_col['col']).slice == slice} ")
-                        if self.item(j, name_col['col']).slice == slice:
+                            f"{i} {j} {self.item(j, name_col['col']).text()}  {self.item(j, name_col['col']).micro_photo == micro_photo} ")
+                        if self.item(j, name_col['col']).micro_photo == micro_photo:
                             present_in_tablewidget[i] = True
                             present_in_active_rect[j] = True
 
-                for i, slice in enumerate(slices):
+                for i, micro_photo_id in enumerate(micro_photos):
+                    micro_photo=micro_photos[micro_photo_id]
                     if not present_in_tablewidget[i]:
                         row_to_add = self.rowCount()
                         self.setRowCount(row_to_add + 1)
                         self.setRowHeight(row_to_add, self.image_height)
-                        item = QTableWidgetItem(f"{slice.id}")
-                        item.slice = slice
+                        item = QTableWidgetItem(f"{micro_photo.slide_score_image_id}")
+                        item.micro_photo = micro_photo
                         self.setItem(row_to_add, name_col['col'], item)
 
-                        item = QTableWidgetItem(f"{list(slice.rect.getCoords())}")
-                        item.slice = slice
+                        item = QTableWidgetItem(f"{micro_photo.size}")
+                        item.micro_photo = micro_photo
                         self.setItem(row_to_add, rect_col['col'], item)
 
                         item = QTableWidgetItem(f"")
-                        item.slice = slice
+                        item.micro_photo = micro_photo
                         self.setItem(row_to_add, img_col['col'], item)
-                        self.setCellWidget(row_to_add, img_col['col'], ImageWidget(image = macro_photo.copy(slice.rect), parent = self))
+                        self.setCellWidget(row_to_add, img_col['col'], ImageWidget(image = micro_photo.pixmap, parent = self))
 
-                        remove_item = QTableWidgetItem("")
-                        remove_item.setIcon(self.style().standardIcon(getattr(QStyle, "SP_TrashIcon")))
-                        remove_item.slice = slice
-                        self.setItem(row_to_add, remove_col['col'], remove_item)
+
 
                 self.setHorizontalHeaderLabels(self.headers)
                 header = self.horizontalHeader()
@@ -115,7 +109,7 @@ class RectTableWidget(QTableWidget):
 
             for j in range(self.rowCount()):
                 if not self.item(j, name_col['col']) is None:
-                    slice = self.item(j, name_col['col']).slice
+                    micro_photo = self.item(j, name_col['col']).micro_photo
 
                     # if hasattr(rect, "iou"):
                     #     self.item(j, iou_col['col']).setText(f"{rect.iou:.3}")
@@ -132,7 +126,7 @@ class RectTableWidget(QTableWidget):
                     # else:
                     #     self.item(j, visible_3d_col['col']).setCheckState(Qt.Unchecked)
 
-                    # if self.item(j, name_col['col']).rect == self.app.active_slice:
+                    # if self.item(j, name_col['col']).rect == self.app.active_micro_photo:
                     #     self.item(j, active_col['col']).setIcon(
                     #         self.style().standardIcon(getattr(QStyle, "SP_DialogApplyButton")))
                     # else:
@@ -145,25 +139,16 @@ class RectTableWidget(QTableWidget):
             self.logger.error(traceback.format_exc())
 
 
-    def cell_pressed(self, row, col):
-        if col == active_col['col']:
-            self.logger.info(f"activate  {row}")
-            self.app.set_active_contour(self.item(row, name_col['col']).slice)
 
     def cell_clicked(self, row, col):
         try:
             self.logger.debug(f"clicked  {row},  {col}")
             item = self.item(row, col)
-            if col in  [name_col['col'], img_col['col']] :
-                self.logger.info(f"{item.slice.rect}")
-                self.app.set_active_slice(item.slice)
-                self.app.gui.tabs_left.setCurrentIndex(1)
+            self.app.reconstruction.active_micro_photo=item.micro_photo.slide_score_image_id
+            self.logger.info(f"{self.app.reconstruction.active_micro_photo}")
+            self.app.gui.tabs_left.setCurrentIndex(1)
 
 
-            if col == remove_col['col']:
-                id = item.slice.id
-                self.removeRow(row)
-                self.app.delete_slice(id=id)
 
         except:
             self.logger.error(sys.exc_info()[0])

@@ -17,7 +17,9 @@ class SlicePhotoWidget(QLabel):
         self.setMouseTracking(True)
         self.origin = QPoint()
         self.slice = None
+        self.show_traces=True
         self.paint()
+        self.pos=QPoint(0,0)
 
 
 
@@ -27,17 +29,20 @@ class SlicePhotoWidget(QLabel):
             modifiers = QApplication.keyboardModifiers()
             control = bool(modifiers & Qt.ControlModifier)
 
+            if control:
+                self.pos = event.pos()
+                self.paint()
 
             if event.buttons() & Qt.LeftButton:
                 self.slice.add_to_trace(event.pos())
                 self.logger.info(f"{event.pos()}")
                 self.paint()
+
+
         except:
             self.logger.error(sys.exc_info()[0])
             self.logger.error(traceback.format_exc())
             pass
-
-
 
 
 
@@ -66,20 +71,41 @@ class SlicePhotoWidget(QLabel):
         self.slice=slice
 
 
+    def set_show_taces(self, show_traces):
+        self.show_traces=show_traces
 
 
     def paint(self):
 
         try:
             pixmap_bg = QPixmap(self.size())
-            pixmap_bg.fill(QColor(50,50,250))
+            pixmap_bg.fill(QColor(255,255,255))
 
             painter = QPainter()
+
             painter.begin(pixmap_bg)
+
+            modifiers = QApplication.keyboardModifiers()
+            ctrl = bool(modifiers & Qt.ControlModifier)
+
+
 
 
             if not self.slice is None:
-                self.slice.paint(painter=painter, size=self.size())
+                self.logger.info(f"self.show_traces = {self.show_traces}")
+                if self.show_traces:
+
+                    self.slice.paint(painter=painter, size=self.size())
+
+                else:
+                    self.slice.paint_2(painter=painter, size=self.size())
+            if ctrl:
+                if not self.app.reconstruction.active_micro_photo is None:
+                    micro_photo = self.app.reconstruction.micro_photos[self.app.reconstruction.active_micro_photo]
+                    pixmap=micro_photo.pixmap_trans
+                    source=QRect(0,0,pixmap.width(), pixmap.height())
+                    target=QRect(self.pos.x(),self.pos.y(),pixmap.width()*2,pixmap.height()*2)
+                    painter.drawPixmap(target, pixmap, source)
 
             painter.end()
             self.setPixmap(pixmap_bg)
