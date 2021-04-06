@@ -3,8 +3,10 @@ import sys
 import traceback
 import importlib
 from pathlib import Path
-
 from reconstruction import Reconstruction
+import configparser
+from slide_score_api.slidescore import APIClient
+
 
 
 
@@ -18,6 +20,8 @@ class Application():
 
         self.gui = gui
         self.config_file = config_file
+        self.read_config()
+        self.write_config()
 
         self.reconstruction = None
         self.active_slice = None
@@ -44,8 +48,6 @@ class Application():
         else:
             self.logger=logger
 
-        self.path_macro_photo=r".\macro_photos\Patient 1 Macrofoto anoniem.jpg"
-
     def say_hello(self):
         self.logger.info("hello")
 
@@ -57,7 +59,7 @@ class Application():
             obj.logger.info("Reloading Reconstruction")
             importlib.reload(reconstruction)
             from reconstruction import Reconstruction
-            obj.reconstruction = Reconstruction.create_copy(reconstruction=application.reconstruction, parent=obj, logger=application.logger)
+            obj.reconstruction = Reconstruction.create_copy(reconstruction=application.reconstruction, parent=obj, logger=application.logger, slide_score_api=application.slide_score_api, slide_score_user=application.slide_score_user)
             obj.reconstruction.set_macro_photo(path_macro_photo=application.path_macro_photo)
             if application.active_slice is None:
                 obj.set_active_slice_by_id(-1)
@@ -69,19 +71,119 @@ class Application():
                 f'Unexpected error: {sys.exc_info()[0]} \n {traceback.format_exc()}')
             return None
 
+    def init_slidescore_api(self):
+        try:
+            self.slide_score_api = APIClient(self.slide_score_server, self.slide_score_api_token)
+        except:
+            self.logger.error(
+                f'Unexpected error: {sys.exc_info()[0]} \n {traceback.format_exc()}')
+            pass
+
 
     def start(self):
-        self.logger.info("Starting Application..")
+        try:
+            self.logger.info("Starting Application..")
+            self.init_slidescore_api()
 
-        init_from_pkl=False
-        if init_from_pkl:
-            self.load_reconstruction_from_pickle(file_name=r"reconstr.pkl")
+            if self.auto_reload:
+                self.load_reconstruction_from_pickle(file_name=r"reconstr.pkl")
 
-        else:
-            self.reconstruction = Reconstruction(parent=self, logger=self.logger)
-            self.reconstruction.set_macro_photo(path_macro_photo=self.path_macro_photo)
-            self.reconstruction.load_micro_photos()
+            else:
+                self.reconstruction = Reconstruction(slide_score_api=self.slide_score_api, slide_score_user= self.slide_score_user, parent= self, logger=self.logger)
+                self.reconstruction.set_slide_score_study_and_case_id(slide_score_study_id=self.slide_score_study_id, slide_score_case_id=self.slide_score_case_id)
+                self.reconstruction.set_macro_photo(path_macro_photo=self.path_macro_photo)
+                self.reconstruction.load_micro_photos(max_cnt_micro_photos= self.max_cnt_micro_photos)
+        except:
+            self.logger.error(
+                f'Unexpected error: {sys.exc_info()[0]} \n {traceback.format_exc()}')
+            pass
 
+    def read_config(self):
+        parser = configparser.ConfigParser()
+
+        if Path(self.config_file).is_file():
+            try:
+                f = open(self.config_file, "r")
+                parser.read_file(f)
+                f.close()
+            except RuntimeError:
+                pass
+
+        try:
+            self.slide_score_server = parser.get("SLIDESCORE", "server")
+        except (configparser.NoOptionError, configparser.NoSectionError):
+            self.slide_score_server = 'https://slidescore.angiogenesis-analytics.nl'
+            pass
+
+        try:
+            self.slide_score_user = parser.get("SLIDESCORE", "user")
+        except (configparser.NoOptionError, configparser.NoSectionError):
+            self.slide_score_user = "wim.zwart@angiogenesis-analytics.nl"
+            pass
+
+        try:
+            self.slide_score_api_token = parser.get("SLIDESCORE", "api_token")
+        except (configparser.NoOptionError, configparser.NoSectionError):
+            self.slide_score_api_token = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJOYW1lIjoiV2ltIEFQSSBhY2Nlc3MiLCJJRCI6IjQwIiwiVmVyc2lvbiI6IjEuMCIsIkNhbkNyZWF0ZVVwbG9hZEZvbGRlcnMiOiJGYWxzZSIsIkNhblVwbG9hZCI6IkZhbHNlIiwiQ2FuRG93bmxvYWRTbGlkZXMiOiJUcnVlIiwiQ2FuRGVsZXRlU2xpZGVzIjoiRmFsc2UiLCJDYW5VcGxvYWRPbmx5SW5Gb2xkZXJzIjoiIiwiQ2FuUmVhZE9ubHlTdHVkaWVzIjoiIiwiQ2FuTW9kaWZ5T25seVN0dWRpZXMiOiIiLCJDYW5HZXRDb25maWciOiJUcnVlIiwiQ2FuR2V0UGl4ZWxzIjoiVHJ1ZSIsIkNhblVwbG9hZFNjb3JlcyI6IkZhbHNlIiwiQ2FuQ3JlYXRlU3R1ZGllcyI6IkZhbHNlIiwiQ2FuUmVpbXBvcnRTdHVkaWVzIjoiRmFsc2UiLCJDYW5EZWxldGVPd25lZFN0dWRpZXMiOiJGYWxzZSIsIkNhbkdldFNjb3JlcyI6IlRydWUiLCJDYW5HZXRBbnlTY29yZXMiOiJUcnVlIiwibmJmIjoxNjE2NDkxNTE1LCJleHAiOjE2NDc5OTAwMDAsImlhdCI6MTYxNjQ5MTUxNX0.duMtd4ZHkyfDSEP2E5MHvnamggZutoCFuYuARn_M_xo"
+            pass
+
+
+        try:
+            self.slide_score_study_id = int (parser.get("SLIDESCORE", "study_id"))
+        except (configparser.NoOptionError, configparser.NoSectionError):
+            self.slide_score_study_id = 2
+            pass
+
+        try:
+            self.slide_score_case_id = int (parser.get("SLIDESCORE", "case_id"))
+        except (configparser.NoOptionError, configparser.NoSectionError):
+            self.slide_score_case_id = 13
+            pass
+
+        try:
+            self.auto_reload = (parser.get("APPLICATION", "auto_reload")) in ["true",
+                                                                                                            "True", "1",
+                                                                                                            "yes",
+                                                                                                            "Yes"]
+        except (configparser.NoOptionError ,  configparser.NoSectionError):
+            self.auto_reload = False
+            pass
+
+
+        try:
+            self.path_macro_photo = parser.get("RECONSTRUCTION", "path_macro_photo")
+        except (configparser.NoOptionError, configparser.NoSectionError):
+            self.path_macro_photo = r".\macro_photos\Patient 1 Macrofoto anoniem.jpg"
+            pass
+
+        try:
+            self.max_cnt_micro_photos = int(parser.get("RECONSTRUCTION", "max_cnt_micro_photos"))
+        except (configparser.NoOptionError, configparser.NoSectionError):
+            self.max_cnt_micro_photos = 2
+            pass
+
+
+    def write_config(self):
+        try:
+            parser = configparser.ConfigParser()
+            parser.add_section("SLIDESCORE")
+            parser.set("SLIDESCORE", "server", str(self.slide_score_server))
+            parser.set("SLIDESCORE", "user", str(self.slide_score_user))
+            parser.set("SLIDESCORE", "api_token", str(self.slide_score_api_token))
+            parser.set("SLIDESCORE", "study_id", str(self.slide_score_study_id))
+            parser.set("SLIDESCORE", "case_id", str(self.slide_score_case_id))
+            parser.add_section("APPLICATION")
+            parser.set("APPLICATION", "auto_reload", str(self.auto_reload))
+            parser.add_section("RECONSTRUCTION")
+            parser.set("RECONSTRUCTION", "path_macro_photo", str(self.path_macro_photo))
+            parser.set("RECONSTRUCTION", "max_cnt_micro_photos", str(self.max_cnt_micro_photos))
+            f = open(self.config_file, "w")
+            parser.write(f)
+            f.close()
+        except:
+            self.logger.error(
+                f'Unexpected error: {sys.exc_info()[0]} \n {traceback.format_exc()}')
+            pass
 
     def add_slice(self, rect):
         try:
@@ -95,13 +197,16 @@ class Application():
 
 
     def delete_slice(self, id):
-        new_active_slice= self.reconstruction.delete_slice(id)
-        if new_active_slice is None:
-            self.set_active_slice_by_id(-1)
-        else:
-            self.set_active_slice_by_id(new_active_slice)
+        try:
+            new_active_slice= self.reconstruction.delete_slice(id)
+            if new_active_slice is None:
+                self.set_active_slice_by_id(-1)
+            else:
+                self.set_active_slice_by_id(new_active_slice)
         #note that set_active_slice already performs a gui update
-
+        except:
+            self.logger.error(sys.exc_info()[0])
+            self.logger.error(traceback.format_exc())
 
     def set_active_slice_by_id(self,id=-1):
         try:

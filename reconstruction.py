@@ -8,7 +8,6 @@ from PyQt5.QtGui import QPixmap
 
 from micro_photo import MicroPhoto
 from slice import Slice
-from slide_score_api.slidescore import APIClient
 
 
 class Reconstruction:
@@ -16,7 +15,7 @@ class Reconstruction:
     Contains the 3D data for a feature
     """
 
-    def __init__(self, parent=None, logger=None):
+    def __init__(self, slide_score_api, slide_score_user, parent=None, logger=None) :
         """
         Initializes and empty feature object. For initialization with data, use @classmethod create_feature.
         :param parent: a pointer to the parent PatientData object, can be omitted
@@ -29,6 +28,11 @@ class Reconstruction:
         self.macro_photo=None
         self.active_micro_photo=None
         self.ruler_points=[]
+        self.slide_score_api=slide_score_api
+        self.slide_score_user=slide_score_user
+        self.slide_score_case_id=-1
+        self.slide_score_study_id=-1
+
 
         if logger is not None:
             self.logger = logger
@@ -40,10 +44,14 @@ class Reconstruction:
 
 
     @classmethod
-    def create_copy(cls, reconstruction, parent=None, logger=None):
+    def create_copy(cls, reconstruction, parent=None, logger=None, slide_score_api=None, slide_score_user=None ):
         if reconstruction is None:
             return None
-        obj = cls(parent=parent, logger=logger)
+        obj = cls(parent=parent, logger=logger,
+                  slide_score_api=slide_score_api,
+                  slide_score_user=slide_score_user)
+        obj.set_slide_score_study_and_case_id(  slide_score_study_id= reconstruction.slide_score_study_id,
+                                                slide_score_case_id = reconstruction.slide_score_case_id)
         import micro_photo
         obj.logger.warning("reloading microphotos")
         importlib.reload(micro_photo)
@@ -65,30 +73,22 @@ class Reconstruction:
         return obj
 
 
+    def set_slide_score_study_and_case_id(self,slide_score_study_id,slide_score_case_id):
+        self.slide_score_study_id=slide_score_study_id
+        self.slide_score_case_id=slide_score_case_id
 
-    def load_micro_photos(self):
-        self.init_slides_score_api()
+
+    def load_micro_photos(self, max_cnt_micro_photos=3):
         self.get_micro_photo_ids()
-        self.get_micro_photos(max_cnt=3)
-
-
-
-    def init_slides_score_api(self):
-
-        self.slide_score_api_token = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJOYW1lIjoiV2ltIEFQSSBhY2Nlc3MiLCJJRCI6IjQwIiwiVmVyc2lvbiI6IjEuMCIsIkNhbkNyZWF0ZVVwbG9hZEZvbGRlcnMiOiJGYWxzZSIsIkNhblVwbG9hZCI6IkZhbHNlIiwiQ2FuRG93bmxvYWRTbGlkZXMiOiJUcnVlIiwiQ2FuRGVsZXRlU2xpZGVzIjoiRmFsc2UiLCJDYW5VcGxvYWRPbmx5SW5Gb2xkZXJzIjoiIiwiQ2FuUmVhZE9ubHlTdHVkaWVzIjoiIiwiQ2FuTW9kaWZ5T25seVN0dWRpZXMiOiIiLCJDYW5HZXRDb25maWciOiJUcnVlIiwiQ2FuR2V0UGl4ZWxzIjoiVHJ1ZSIsIkNhblVwbG9hZFNjb3JlcyI6IkZhbHNlIiwiQ2FuQ3JlYXRlU3R1ZGllcyI6IkZhbHNlIiwiQ2FuUmVpbXBvcnRTdHVkaWVzIjoiRmFsc2UiLCJDYW5EZWxldGVPd25lZFN0dWRpZXMiOiJGYWxzZSIsIkNhbkdldFNjb3JlcyI6IlRydWUiLCJDYW5HZXRBbnlTY29yZXMiOiJUcnVlIiwibmJmIjoxNjE2NDkxNTE1LCJleHAiOjE2NDc5OTAwMDAsImlhdCI6MTYxNjQ5MTUxNX0.duMtd4ZHkyfDSEP2E5MHvnamggZutoCFuYuARn_M_xo"
-        self.slide_score_server='https://slidescore.angiogenesis-analytics.nl'
-        self.slice_score_user = "wim.zwart@angiogenesis-analytics.nl"
-        self.slide_score_study_id = 2
-        self.slide_score_case_id = 13
-        self.slide_score_api = APIClient(self.slide_score_server, self.slide_score_api_token)
-
-
+        self.get_micro_photos(max_cnt=max_cnt_micro_photos)
 
     def get_micro_photo_ids(self):
 
+        # todo We aer borrowing here slice_score_user from self.app
         response = self.slide_score_api.perform_request("Scores",
-                                                        {"studyid": self.slide_score_study_id, "question": None, "email": self.slice_score_user, "imageid": None,
-                                        "caseid": self.slide_score_case_id})
+                                                        {"studyid": self.slide_score_study_id, "question": None,
+                                                         "email": self.slide_score_user, "imageid": None,
+                                                         "caseid": self.slide_score_case_id})
         rjson = response.json()
 
         self.slide_score_image_ids = set()
@@ -139,7 +139,6 @@ class Reconstruction:
             logger.info(f"Reloading Reconstruction from {file_name}")
             obj = pickle.load(open(file_name, "rb"))
             logger.info(f"obj obtained")
-            obj.init_slides_score_api()
             obj.restore_non_serializable_objects(parent=parent, logger=logger, macro_photo=QPixmap(path_macro_photo),slide_score_api=obj.slide_score_api)
             logger.info(f"obj restored_non_serializable_objects")
             return obj
