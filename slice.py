@@ -13,7 +13,6 @@ from PyQt5.QtWidgets import QLabel , QRubberBand ,QApplication
 from PyQt5.QtGui import QPixmap, QColor , QPainter, QPolygon, QBrush, QImage, QPen
 
 
-
 class Slice():
     def __init__(self, logger):
         self.logger=logger
@@ -37,6 +36,22 @@ class Slice():
         obj.id=id
         return obj
 
+    @classmethod
+    def create_copy(cls, slice, logger):
+        obj = cls(logger=logger)
+
+        obj.macro_photo=slice.macro_photo
+        obj.slice_photo=slice.slice_photo
+        obj.rect=slice.rect
+        obj.id=slice.id
+        obj.traces=slice.traces
+        obj.tracing = slice.tracing
+        obj.mask = slice.mask
+        obj.pen_width = slice.pen_width
+        obj.max_num_train_pixels = slice.max_num_train_pixels
+        return obj
+
+
     def remove_non_serializable_objects(self):
         del self.macro_photo
         del self.slice_photo
@@ -51,6 +66,7 @@ class Slice():
 
     def paint(self, painter, size):
         try:
+            self.logger.info("panting")
             photo = self.slice_photo
             size_draw = QSize(min(size.width(), photo.width()), min(size.height(), photo.height()))
 

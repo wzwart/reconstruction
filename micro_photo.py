@@ -17,13 +17,20 @@ class MicroPhoto:
         self.slide_score_case_id=slide_score_case_id
         self.slide_score_study_id=slide_score_study_id
         self.slide_score_api=slide_score_api
+        self.img=None
         self.meta_data={}
-        self.get_metadata()
-        self.pixmap = self.get_image()
-        self.logger.info(f"Read Image {self.slide_score_image_id}")
-        self.logger.info(f"Meta Data {self.meta_data}")
 
 
+
+
+    @classmethod
+    def create_copy(cls, micro_photo, parent=None, logger=None):
+        obj=cls(slide_score_api=micro_photo.slide_score_api, slide_score_study_id=micro_photo.slide_score_study_id, slide_score_case_id=micro_photo.slide_score_case_id, slide_score_image_id=micro_photo.slide_score_image_id, parent = parent, logger = logger)
+        obj.img=micro_photo.img
+        obj.meta_data=micro_photo.meta_data
+        obj.process_meta_data()
+        obj.get_pixmaps_from_img()
+        return obj
 
     def get_image(self):
 
@@ -42,7 +49,7 @@ class MicroPhoto:
 
             img_width = (rect[1][0] - rect[0][0]) // (2 ** zoom_level) + 1
             img_height = (rect[1][1] - rect[0][1]) // (2 ** zoom_level) + 1
-            img = np.zeros((img_height, img_width, 3), dtype=np.uint8)
+            self.img = np.zeros((img_height, img_width, 3), dtype=np.uint8)
 
 
 
@@ -75,38 +82,59 @@ class MicroPhoto:
                     self.logger.info(f"Top_image: {top_img}, Bottom_image {bottom_img}")
                     self.logger.info(f"Top_tile: {top_tile}, Bottom_tile {bottom_tile}")
 
-                    img[top_img:bottom_img + 1, left_img: right_img + 1] = tile[top_tile:bottom_tile + 1,
+                    self.img[top_img:bottom_img + 1, left_img: right_img + 1] = tile[top_tile:bottom_tile + 1,
                                                                            left_tile: right_tile + 1]
 
-            qimage = QImage(img, img.shape[1], img.shape[0], img.shape[1] * 3, QImage.Format_RGB888)
-            pixmap = QPixmap(qimage)
 
-            exp_mask=np.ones((img.shape[0], img.shape[1],1)) * np.linalg.norm(img - np.array([241,241,241]).reshape((1,1,3)),axis=2, keepdims=True)/50
-
-            arr_photo = np.concatenate((img[:,:,2:3],img[:,:,1:2],img[:,:,0:1], 255 * exp_mask), axis=2).astype(np.uint8)
-            self.logger.info(f"arr_photo {arr_photo.shape}")
-
-            qimage_trans = QImage(arr_photo, arr_photo.shape[1], arr_photo.shape[0],
-                            QImage.Format_ARGB32)
-            self.pixmap_trans=  QPixmap(qimage_trans)
-
-
-            return pixmap
 
         except:
+
+            self.img=np.ones((100,100,3), dtype=np.uint8) * np.array([50,50,250], dtype=np.uint8).reshape((1,1,3))
             self.logger.error(sys.exc_info()[0])
             self.logger.error(traceback.format_exc())
 
-            pixmap = QPixmap(QSize(100,100))
-            pixmap.fill(QColor(50,50,250))
+        self.get_pixmaps_from_img()
 
-            return pixmap
+
+    def get_pixmaps_from_img(self):
+        '''
+        create pixmap and transparent pixmap from self.img
+        :return:
+        '''
+        try:
+            qimage = QImage(self.img, self.img.shape[1], self.img.shape[0], self.img.shape[1] * 3, QImage.Format_RGB888)
+            self.pixmap = QPixmap(qimage)
+            exp_mask = np.ones((self.img.shape[0], self.img.shape[1], 1)) * np.linalg.norm(
+                self.img - np.array([241, 241, 241]).reshape((1, 1, 3)), axis=2, keepdims=True) / 20
+
+            arr_photo = np.concatenate((self.img[:, :, 2:3], self.img[:, :, 1:2], self.img[:, :, 0:1], 255 * exp_mask),
+                                       axis=2).astype(np.uint8)
+            self.logger.info(f"arr_photo {arr_photo.shape}")
+
+            qimage_trans = QImage(arr_photo, arr_photo.shape[1], arr_photo.shape[0],
+                                  QImage.Format_ARGB32)
+            self.pixmap_trans = QPixmap(qimage_trans)
+        except:
+
+            self.logger.error(sys.exc_info()[0])
+            self.logger.error(traceback.format_exc())
+
+
 
 
     def get_metadata(self):
         response = self.slide_score_api.perform_request("GetImageMetadata?imageId=" + str(self.slide_score_image_id), None, method="GET")
         rjson = response.json()
         self.meta_data = rjson['metadata']
+
+        # also getting the url and cookie for reading the slices
+        response = self.slide_score_api.perform_request("GetTileServer?imageId=" + str(self.slide_score_image_id), None, method="GET")
+        rjson = response.json()
+        self.meta_data['cookie']=rjson['cookiePart']
+        self.meta_data['url']=rjson['urlPart']
+        return self.meta_data
+
+    def process_meta_data(self):
         self.tile_width=self.meta_data['level0TileWidth']
         self.tile_height=self.meta_data['level0TileHeight']
         self.width=self.meta_data['level0Width']
@@ -114,12 +142,22 @@ class MicroPhoto:
         self.size=[self.width,self.height]
         self.mpp_x=self.meta_data['mppX']
         self.mpp_y=self.meta_data['mppY']
-
-        # also getting the url and cookie for reading the slices
-        response = self.slide_score_api.perform_request("GetTileServer?imageId=" + str(self.slide_score_image_id), None, method="GET")
-        rjson = response.json()
-        self.cookie = rjson['cookiePart']
-        self.url=rjson['urlPart']
+        self.cookie = self.meta_data['cookie']
+        self.url=self.meta_data['url']
 
 
-        return self.meta_data
+
+    def remove_non_serializable_objects(self):
+        del self.parent
+        del self.logger
+        del self.slide_score_api
+        del self.pixmap_trans
+        del self.pixmap
+        return
+
+    def restore_non_serializable_objects(self, parent, logger, slide_score_api):
+        self.parent=parent
+        self.logger=logger
+        self.slide_score_api=slide_score_api
+        self.get_pixmaps_from_img()
+        return

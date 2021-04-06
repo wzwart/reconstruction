@@ -53,25 +53,32 @@ class MicroTableWidget(QTableWidget):
             self.logger.setLevel(logging.ERROR)
             ch = logging.StreamHandler()
             self.logger.addHandler(ch)
-        self.app = app
 
         self.cellClicked.connect(self.cell_clicked)
+        self.set_app(app)
+
+    def set_app(self, app):
+        self.app=app
+        for j in range(self.rowCount()):
+            self.removeRow(j)
+        self.update_table_widget()
 
 
     def update_table_widget(self):
         try:
-            micro_photos = self.app.reconstruction.micro_photos
-            macro_photo=self.app.reconstruction.macro_photo
+            if not self.app.reconstruction is None:
+                micro_photos = self.app.reconstruction.micro_photos
+            else:
+                micro_photos =[]
+
             if not len(micro_photos) == self.rowCount():
 
-                self.logger.debug(f"{len(micro_photos)} != {self.rowCount()}")
+
 
                 present_in_tablewidget = [False for i in range(len(micro_photos))]
                 present_in_active_rect = [False for i in range(self.rowCount())]
                 for i, micro_photo in enumerate(micro_photos):
                     for j in range(self.rowCount()):
-                        self.logger.debug(
-                            f"{i} {j} {self.item(j, name_col['col']).text()}  {self.item(j, name_col['col']).micro_photo == micro_photo} ")
                         if self.item(j, name_col['col']).micro_photo == micro_photo:
                             present_in_tablewidget[i] = True
                             present_in_active_rect[j] = True
@@ -85,7 +92,8 @@ class MicroTableWidget(QTableWidget):
                         item = QTableWidgetItem(f"{micro_photo.slide_score_image_id}")
                         item.micro_photo = micro_photo
                         self.setItem(row_to_add, name_col['col'], item)
-
+                        if not hasattr(micro_photo, "size"):
+                            self.logger.error("alertt")
                         item = QTableWidgetItem(f"{micro_photo.size}")
                         item.micro_photo = micro_photo
                         self.setItem(row_to_add, rect_col['col'], item)
@@ -142,7 +150,7 @@ class MicroTableWidget(QTableWidget):
 
     def cell_clicked(self, row, col):
         try:
-            self.logger.debug(f"clicked  {row},  {col}")
+
             item = self.item(row, col)
             self.app.reconstruction.active_micro_photo=item.micro_photo.slide_score_image_id
             self.logger.info(f"{self.app.reconstruction.active_micro_photo}")

@@ -11,7 +11,7 @@ class SlicePhotoWidget(QLabel):
     def __init__(self, parent=None, app=None):
 
         QLabel.__init__(self)
-        self.app=app
+        self.set_app(app)
         self.logger = app.logger
         self.rubberBand = QRubberBand(QRubberBand.Rectangle, self)
         self.setMouseTracking(True)
@@ -20,6 +20,11 @@ class SlicePhotoWidget(QLabel):
         self.show_traces=True
         self.paint()
         self.pos=QPoint(0,0)
+
+
+    def set_app(self, app):
+        self.app=app
+        self.set_slice(app.active_slice)
 
 
 
@@ -43,8 +48,6 @@ class SlicePhotoWidget(QLabel):
             self.logger.error(sys.exc_info()[0])
             self.logger.error(traceback.format_exc())
             pass
-
-
 
 
 
@@ -87,8 +90,6 @@ class SlicePhotoWidget(QLabel):
 
             modifiers = QApplication.keyboardModifiers()
             ctrl = bool(modifiers & Qt.ControlModifier)
-
-
 
 
             if not self.slice is None:

@@ -29,7 +29,6 @@ class ImageWidget(QWidget):
         painter = QPainter(self)
         target=  QRect(0,0,self.width(), self.height())
         source=  QRect(0,0,self.image.width(), self.image.height())
-
         painter.drawPixmap(target, self.image, source)
 
 
@@ -41,8 +40,6 @@ class RectTableWidget(QTableWidget):
 
         self.image_width = 300
         self.image_height = 300
-
-
 
 
         self.headers = [""] * self.num_cols
@@ -57,25 +54,32 @@ class RectTableWidget(QTableWidget):
             self.logger.setLevel(logging.ERROR)
             ch = logging.StreamHandler()
             self.logger.addHandler(ch)
-        self.app = app
+        self.set_app(app)
 
         self.cellClicked.connect(self.cell_clicked)
         self.cellPressed.connect(self.cell_pressed)
 
+
+    def set_app(self, app):
+        self.app=app
+        for j in range(self.rowCount()):
+            self.removeRow(j)
+        self.update_table_widget()
+
     def update_table_widget(self):
         try:
-            slices = self.app.reconstruction.slices
-            macro_photo=self.app.reconstruction.macro_photo
+            if self.app.reconstruction is None:
+                slices = []
+            else:
+                slices = self.app.reconstruction.slices
+                macro_photo=self.app.reconstruction.macro_photo
             if not len(slices) == self.rowCount():
 
-                self.logger.debug(f"{len(slices)} != {self.rowCount()}")
 
                 present_in_tablewidget = [False for i in range(len(slices))]
                 present_in_active_rect = [False for i in range(self.rowCount())]
                 for i, slice in enumerate(slices):
                     for j in range(self.rowCount()):
-                        self.logger.debug(
-                            f"{i} {j} {self.item(j, name_col['col']).text()}  {self.item(j, name_col['col']).slice == slice} ")
                         if self.item(j, name_col['col']).slice == slice:
                             present_in_tablewidget[i] = True
                             present_in_active_rect[j] = True
@@ -156,7 +160,7 @@ class RectTableWidget(QTableWidget):
             item = self.item(row, col)
             if col in  [name_col['col'], img_col['col']] :
                 self.logger.info(f"{item.slice.rect}")
-                self.app.set_active_slice(item.slice)
+                self.app.set_active_slice_by_id(item.slice.id)
                 self.app.gui.tabs_left.setCurrentIndex(1)
 
 

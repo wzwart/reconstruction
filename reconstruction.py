@@ -1,3 +1,4 @@
+import importlib
 import logging
 import pickle
 import sys
@@ -25,9 +26,9 @@ class Reconstruction:
         self.parent = parent
         self.slices = []
         self.micro_photos={}
+        self.macro_photo=None
         self.active_micro_photo=None
-
-
+        self.ruler_points=[]
 
         if logger is not None:
             self.logger = logger
@@ -37,6 +38,35 @@ class Reconstruction:
             ch = logging.StreamHandler()
             self.logger.addHandler(ch)
 
+
+    @classmethod
+    def create_copy(cls, reconstruction, parent=None, logger=None):
+        if reconstruction is None:
+            return None
+        obj = cls(parent=parent, logger=logger)
+        import micro_photo
+        obj.logger.warning("reloading microphotos")
+        importlib.reload(micro_photo)
+        from micro_photo import MicroPhoto
+        for miro_photo_id in reconstruction.micro_photos:
+            obj.micro_photos[miro_photo_id] = MicroPhoto.create_copy(
+                micro_photo=reconstruction.micro_photos[miro_photo_id],
+                parent=parent,
+                logger=logger)
+        obj.active_micro_photo=reconstruction.active_micro_photo
+        import slice
+        obj.logger.warning("reloading Slices")
+        importlib.reload(slice)
+        from slice import Slice
+        for slice in reconstruction.slices:
+            obj.slices.append(Slice.create_copy(slice=slice,logger=logger))
+
+        obj.ruler_points=reconstruction.ruler_points
+        return obj
+
+
+
+    def load_micro_photos(self):
         self.init_slides_score_api()
         self.get_micro_photo_ids()
         self.get_micro_photos(max_cnt=3)
@@ -50,8 +80,6 @@ class Reconstruction:
         self.slice_score_user = "wim.zwart@angiogenesis-analytics.nl"
         self.slide_score_study_id = 2
         self.slide_score_case_id = 13
-
-
         self.slide_score_api = APIClient(self.slide_score_server, self.slide_score_api_token)
 
 
@@ -87,6 +115,10 @@ class Reconstruction:
                         slide_score_api=self.slide_score_api,
                         logger=self.logger,
                         parent=self.parent)
+                    self.micro_photos[slide_score_image_id].get_metadata()
+                    self.micro_photos[slide_score_image_id].process_meta_data()
+                    self.micro_photos[slide_score_image_id].get_image()
+
                     cnt +=1
                     self.active_micro_photo=slide_score_image_id
 
@@ -107,7 +139,8 @@ class Reconstruction:
             logger.info(f"Reloading Reconstruction from {file_name}")
             obj = pickle.load(open(file_name, "rb"))
             logger.info(f"obj obtained")
-            obj.restore_non_serializable_objects(parent=parent, logger=logger, macro_photo=QPixmap(path_macro_photo))
+            obj.init_slides_score_api()
+            obj.restore_non_serializable_objects(parent=parent, logger=logger, macro_photo=QPixmap(path_macro_photo),slide_score_api=obj.slide_score_api)
             logger.info(f"obj restored_non_serializable_objects")
             return obj
         except:
@@ -119,6 +152,7 @@ class Reconstruction:
     def save_to_pickle(self, file_name):
 
         try:
+            slide_score_api=self.slide_score_api
             logger = self.logger
             parent= self.parent
             macro_photo=self.macro_photo
@@ -126,7 +160,7 @@ class Reconstruction:
             self.remove_non_serializable_objects()
             pickle.dump(self, open(file_name, "wb"))
             logger.info("Saved")
-            self.restore_non_serializable_objects(logger=logger, parent=parent, macro_photo=macro_photo)
+            self.restore_non_serializable_objects(logger=logger, parent=parent, macro_photo=macro_photo,slide_score_api=slide_score_api)
             logger.info("Restored")
         except:
             logger.error(sys.exc_info()[0])
@@ -171,9 +205,12 @@ class Reconstruction:
         for slice in self.slices:
             logger.debug(f"remove_non_serializable_objects {slice.id}")
             slice.remove_non_serializable_objects()
+        for micro_photo in self.micro_photos:
+            self.micro_photos[micro_photo].remove_non_serializable_objects()
         logger.debug(f"Done remove_non_serializable_objects ")
 
-    def restore_non_serializable_objects(self, logger,  parent, macro_photo):
+
+    def restore_non_serializable_objects(self, logger,  parent, macro_photo,slide_score_api):
         self.macro_photo=macro_photo
         self.logger = logger
         self.parent = parent
@@ -181,4 +218,12 @@ class Reconstruction:
             slice.restore_non_serializable_objects(macro_photo=macro_photo, logger=self.logger)
         for slice in self.slices:
             self.logger.info(f"Slide ID={slice.id} rect = {slice.rect}, macro_photo={macro_photo}")
+        for micro_photo in self.micro_photos:
+            self.micro_photos[micro_photo].restore_non_serializable_objects(logger=logger,slide_score_api=slide_score_api,parent=parent )
 
+
+
+    def add_ruler_point(self, point):
+        self.ruler_points.append(point)
+        if len (self.ruler_points) > 2 :
+            self.ruler_points=self.ruler_points[-2:]
