@@ -43,6 +43,9 @@ class Reconstruction:
             self.logger.addHandler(ch)
 
 
+        self.macro_photo_path=None
+
+
     @classmethod
     def create_copy(cls, reconstruction, parent=None, logger=None, slide_score_api=None, slide_score_user=None ):
         if reconstruction is None:
@@ -129,17 +132,19 @@ class Reconstruction:
             return None
 
 
-    def set_macro_photo(self, path_macro_photo):
-        self.macro_photo=QPixmap(path_macro_photo)
+    def set_macro_photo(self, macro_photo_path):
+        self.macro_photo_path=macro_photo_path
 
+        self.macro_photo=QPixmap(macro_photo_path)
+        self.logger.info(f"Loaded macro_photo with size{self.macro_photo.size()}")
 
     @classmethod
-    def load_from_pickle(cls, file_name, parent, logger, path_macro_photo):
+    def load_from_pickle(cls, file_name, parent, logger, macro_photo_path):
         try:
             logger.info(f"Reloading Reconstruction from {file_name}")
             obj = pickle.load(open(file_name, "rb"))
             logger.info(f"obj obtained")
-            obj.restore_non_serializable_objects(parent=parent, logger=logger, macro_photo=QPixmap(path_macro_photo),slide_score_api=obj.slide_score_api)
+            obj.restore_non_serializable_objects(parent=parent, logger=logger, macro_photo=QPixmap(macro_photo_path),slide_score_api=obj.slide_score_api)
             logger.info(f"obj restored_non_serializable_objects")
             return obj
         except:
@@ -155,12 +160,14 @@ class Reconstruction:
             logger = self.logger
             parent= self.parent
             macro_photo=self.macro_photo
-            self.logger.info("Saving")
+
+            self.logger.info("Saving to pickle")
             self.remove_non_serializable_objects()
             pickle.dump(self, open(file_name, "wb"))
-            logger.info("Saved")
+            logger.debug("Saved to pickle")
             self.restore_non_serializable_objects(logger=logger, parent=parent, macro_photo=macro_photo,slide_score_api=slide_score_api)
-            logger.info("Restored")
+            logger.debug("Non-serializable items restored")
+
         except:
             logger.error(sys.exc_info()[0])
             logger.error(traceback.format_exc())
@@ -176,7 +183,7 @@ class Reconstruction:
         try:
             new_slice = Slice.create_from_photo(macro_photo=self.macro_photo, rect=rect, id=len(self.slices), logger=self.logger)
             self.slices.append(new_slice)
-            self.logger.info(f"adding slice with rect {rect}")
+            self.logger.info(f"Adding slice with rect {rect}")
             return new_slice
         except:
             self.logger.error(sys.exc_info()[0])
@@ -185,7 +192,7 @@ class Reconstruction:
 
 
     def delete_slice(self, id):
-        self.logger.info(f"deleting id {id}")
+        self.logger.info(f"Deleting slice with id {id}")
         self.slices = [slice for slice in self.slices if not slice.id == id]
 
         if len(self.slices) > 0:
@@ -193,7 +200,6 @@ class Reconstruction:
         else:
             new_active_slice = None
         return new_active_slice
-
 
     def remove_non_serializable_objects(self):
         logger=self.logger
@@ -210,7 +216,7 @@ class Reconstruction:
 
 
     def restore_non_serializable_objects(self, logger,  parent, macro_photo,slide_score_api):
-        self.macro_photo=macro_photo
+        self.macro_photo = macro_photo
         self.logger = logger
         self.parent = parent
         for slice in self.slices:
@@ -218,7 +224,9 @@ class Reconstruction:
         for slice in self.slices:
             self.logger.info(f"Slide ID={slice.id} rect = {slice.rect}, macro_photo={macro_photo}")
         for micro_photo in self.micro_photos:
-            self.micro_photos[micro_photo].restore_non_serializable_objects(logger=logger,slide_score_api=slide_score_api,parent=parent )
+            self.micro_photos[micro_photo].restore_non_serializable_objects(logger=logger,
+                                                                            slide_score_api=slide_score_api,
+                                                                            parent=parent)
 
 
 
@@ -226,3 +234,52 @@ class Reconstruction:
         self.ruler_points.append(point)
         if len (self.ruler_points) > 2 :
             self.ruler_points=self.ruler_points[-2:]
+
+    @classmethod
+    def create_from_dict(cls, data,
+                         slide_score_api,
+                         slide_score_user,
+                         parent=None,
+                         logger=None
+                         ):
+
+        obj = cls(parent=parent,
+                  logger=logger,
+                  slide_score_api=slide_score_api,
+                  slide_score_user=slide_score_user)
+        obj.set_macro_photo(data['macro_photo_path'])
+        obj.set_slide_score_study_and_case_id(slide_score_study_id=data['slide_score_study_id'],
+                                              slide_score_case_id=data['slide_score_case_id'])
+        for micro_photo_id in data['micro_photo_ids']:
+            obj.micro_photos[micro_photo_id] = MicroPhoto.create_from_slide_score(
+                slide_score_api=slide_score_api,
+                slide_score_study_id=obj.slide_score_study_id,
+                slide_score_case_id=obj.slide_score_case_id,
+                slide_score_image_id=micro_photo_id,
+                parent=parent,
+                logger=logger)
+
+        for slice_data in data['slices']:
+            obj.slices.append(Slice.create_from_dict(data=slice_data,
+                                                     macro_photo=obj.macro_photo,
+                                                     logger=logger))
+        return obj
+
+    def get_dict_for_serialisation(self):
+        '''
+        extract the  contour data as a dict for serialisation.
+        :return: a dict
+        '''
+
+        data = {}
+        data['slices']=[slice.get_dict_for_serialisation() for slice in self.slices]
+        data['ruler_points']=[[point.x(), point.y()] for point in self.ruler_points]
+        data['macro_photo_path']=self.macro_photo_path
+        data['slide_score_case_id']=self.slide_score_case_id
+        data['slide_score_study_id']=self.slide_score_study_id
+        data['micro_photo_ids']=[micro_photo_id for micro_photo_id in self.micro_photos]
+
+
+
+
+        return data

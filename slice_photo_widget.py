@@ -94,15 +94,11 @@ class SlicePhotoWidget(QLabel):
 
             if not self.slice is None:
                 self.logger.info(f"self.show_traces = {self.show_traces}")
-                if self.show_traces:
+                self.slice.paint(painter=painter, size=self.size(), show_traces=self.show_traces)
 
-                    self.slice.paint(painter=painter, size=self.size())
-
-                else:
-                    self.slice.paint_2(painter=painter, size=self.size())
             if ctrl:
                 if not self.app.reconstruction.active_micro_photo is None:
-                    micro_photo = self.app.reconstruction.micro_photos[self.app.reconstruction.active_micro_photo]
+                    micro_photo = self.app.reconstruction.micro_photos[str(self.app.reconstruction.active_micro_photo)]
                     pixmap=micro_photo.pixmap_trans
                     source=QRect(0,0,pixmap.width(), pixmap.height())
                     target=QRect(self.pos.x(),self.pos.y(),pixmap.width()*2,pixmap.height()*2)

@@ -45,7 +45,6 @@ class MacroPhotoWidget(QLabel):
 
 
 
-
     def mouseMoveEvent(self, event):
 
         if not self.origin_rubber_band.isNull():
@@ -81,7 +80,6 @@ class MacroPhotoWidget(QLabel):
 
             painter = QPainter()
             painter.begin(pixmap_bg)
-            self.app.say_hello()
             if not self.app.reconstruction is None:
                 photo=self.app.reconstruction.macro_photo
                 size_draw=QSize(min(self.width(),photo.size().width()),min(self.height(),photo.size().height()) )

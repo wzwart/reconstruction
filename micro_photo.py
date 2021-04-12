@@ -50,6 +50,7 @@ class MicroPhoto:
             img_width = (rect[1][0] - rect[0][0]) // (2 ** zoom_level) + 1
             img_height = (rect[1][1] - rect[0][1]) // (2 ** zoom_level) + 1
             self.img = np.zeros((img_height, img_width, 3), dtype=np.uint8)
+            self.logger.info(f"Getting imgae {self.slide_score_image_id}. Size: {img_width} x {img_height}")
 
 
 
@@ -120,8 +121,6 @@ class MicroPhoto:
             self.logger.error(traceback.format_exc())
 
 
-
-
     def get_metadata(self):
         response = self.slide_score_api.perform_request("GetImageMetadata?imageId=" + str(self.slide_score_image_id), None, method="GET")
         rjson = response.json()
@@ -161,3 +160,15 @@ class MicroPhoto:
         self.slide_score_api=slide_score_api
         self.get_pixmaps_from_img()
         return
+
+
+
+
+
+    @classmethod
+    def create_from_slide_score(cls, slide_score_api, slide_score_study_id, slide_score_case_id,  slide_score_image_id,  parent=None, logger=None):
+        obj=cls(slide_score_api=slide_score_api, slide_score_study_id=slide_score_study_id, slide_score_case_id=slide_score_case_id, slide_score_image_id=slide_score_image_id, parent = parent, logger = logger)
+        obj.get_metadata()
+        obj.process_meta_data()
+        obj.get_image()
+        return obj

@@ -6,7 +6,29 @@ from pathlib import Path
 from reconstruction import Reconstruction
 import configparser
 from slide_score_api.slidescore import APIClient
+import json
 
+from _ctypes import PyObj_FromPtr
+import json
+import re
+
+class MyJSONEncoder(json.JSONEncoder):
+
+  def iterencode(self, o, _one_shot=False):
+    list_lvl = 0
+    for s in super(MyJSONEncoder, self).iterencode(o, _one_shot=_one_shot):
+      if s.startswith('['):
+        list_lvl += 1
+        s = s.replace('\n', '').rstrip()
+      elif 0 < list_lvl:
+        s = s.replace('\n', '').rstrip()
+        if s and s[-1] == ',':
+          s = s[:-1] + self.item_separator
+        elif s and s[-1] == ':':
+          s = s[:-1] + self.key_separator
+      if s.endswith(']'):
+        list_lvl -= 1
+      yield s
 
 
 
@@ -48,19 +70,18 @@ class Application():
         else:
             self.logger=logger
 
-    def say_hello(self):
-        self.logger.info("hello")
 
     @classmethod
     def create_copy(cls, application):
         try:
             obj = cls(gui=application.gui, config_file=application.config_file, logger=application.logger)
+            obj.init_slidescore_api()
             import reconstruction
             obj.logger.info("Reloading Reconstruction")
             importlib.reload(reconstruction)
             from reconstruction import Reconstruction
             obj.reconstruction = Reconstruction.create_copy(reconstruction=application.reconstruction, parent=obj, logger=application.logger, slide_score_api=application.slide_score_api, slide_score_user=application.slide_score_user)
-            obj.reconstruction.set_macro_photo(path_macro_photo=application.path_macro_photo)
+            obj.reconstruction.set_macro_photo(macro_photo_path=application.macro_photo_path)
             if application.active_slice is None:
                 obj.set_active_slice_by_id(-1)
             else:
@@ -79,7 +100,6 @@ class Application():
                 f'Unexpected error: {sys.exc_info()[0]} \n {traceback.format_exc()}')
             pass
 
-
     def start(self):
         try:
             self.logger.info("Starting Application..")
@@ -91,7 +111,7 @@ class Application():
             else:
                 self.reconstruction = Reconstruction(slide_score_api=self.slide_score_api, slide_score_user= self.slide_score_user, parent= self, logger=self.logger)
                 self.reconstruction.set_slide_score_study_and_case_id(slide_score_study_id=self.slide_score_study_id, slide_score_case_id=self.slide_score_case_id)
-                self.reconstruction.set_macro_photo(path_macro_photo=self.path_macro_photo)
+                self.reconstruction.set_macro_photo(macro_photo_path=self.macro_photo_path)
                 self.reconstruction.load_micro_photos(max_cnt_micro_photos= self.max_cnt_micro_photos)
         except:
             self.logger.error(
@@ -151,15 +171,21 @@ class Application():
 
 
         try:
-            self.path_macro_photo = parser.get("RECONSTRUCTION", "path_macro_photo")
+            self.macro_photo_path = parser.get("RECONSTRUCTION", "macro_photo_path")
         except (configparser.NoOptionError, configparser.NoSectionError):
-            self.path_macro_photo = r".\macro_photos\Patient 1 Macrofoto anoniem.jpg"
+            self.macro_photo_path = r".\macro_photos\Patient 1 Macrofoto anoniem.jpg"
             pass
 
         try:
             self.max_cnt_micro_photos = int(parser.get("RECONSTRUCTION", "max_cnt_micro_photos"))
         except (configparser.NoOptionError, configparser.NoSectionError):
             self.max_cnt_micro_photos = 2
+            pass
+
+        try:
+            self.json_file_path = parser.get("FILES", "json_file_path")
+        except (configparser.NoOptionError, configparser.NoSectionError):
+            self.json_file_path = r"reconstruct.json"
             pass
 
 
@@ -175,8 +201,10 @@ class Application():
             parser.add_section("APPLICATION")
             parser.set("APPLICATION", "auto_reload", str(self.auto_reload))
             parser.add_section("RECONSTRUCTION")
-            parser.set("RECONSTRUCTION", "path_macro_photo", str(self.path_macro_photo))
+            parser.set("RECONSTRUCTION", "macro_photo_path", str(self.macro_photo_path))
             parser.set("RECONSTRUCTION", "max_cnt_micro_photos", str(self.max_cnt_micro_photos))
+            parser.add_section("FILES")
+            parser.set("FILES", "json_file_path", str(self.json_file_path))
             f = open(self.config_file, "w")
             parser.write(f)
             f.close()
@@ -202,7 +230,7 @@ class Application():
             if new_active_slice is None:
                 self.set_active_slice_by_id(-1)
             else:
-                self.set_active_slice_by_id(new_active_slice)
+                self.set_active_slice_by_id(new_active_slice.id)
         #note that set_active_slice already performs a gui update
         except:
             self.logger.error(sys.exc_info()[0])
@@ -237,7 +265,7 @@ class Application():
 
     def load_reconstruction_from_pickle(self,file_name):
         try:
-            self.reconstruction = Reconstruction.load_from_pickle(file_name=file_name, parent=self, logger=self.logger, path_macro_photo=self.path_macro_photo)
+            self.reconstruction = Reconstruction.load_from_pickle(file_name=file_name, parent=self, logger=self.logger, macro_photo_path=self.macro_photo_path)
             self.gui.update()
         except:
             self.logger.error(sys.exc_info()[0])
@@ -257,6 +285,38 @@ class Application():
         try:
             self.logger.info(f"{ruler_end_point}")
             self.reconstruction.add_ruler_point(ruler_end_point)
+            self.gui.update()
+        except:
+            self.logger.error(sys.exc_info()[0])
+            self.logger.error(traceback.format_exc())
+
+    def save_reconstruction_as_json(self):
+        try:
+            data = self.reconstruction.get_dict_for_serialisation()
+            s= json.dumps(data,  indent='\t')
+            s = re.sub(',$\n^([\t]+)(\w+)' , r",\2", s , flags=re.M)
+            s = re.sub('\[$\n^([\t]+)' , r"[", s , flags=re.M)
+            s = re.sub('$\n^([\t]+)\]' , r"]", s , flags=re.M)
+
+            with open(self.json_file_path, 'w') as outfile:
+                outfile.write(s)
+
+                self.logger.info(f"Wrote reconstruction to  {self.json_file_path}")
+        except:
+            self.logger.error(sys.exc_info()[0])
+            self.logger.error(traceback.format_exc())
+
+    def load_reconstruction_from_json(self):
+        try:
+            self.logger.info(f"Loading reconstruction from {self.json_file_path}")
+            with open(self.json_file_path) as json_file:
+                data = json.load(json_file)
+            self.reconstruction=Reconstruction.create_from_dict(data,
+            slide_score_api=self.slide_score_api,
+            slide_score_user=self.slide_score_user,
+            parent = self,
+                     logger = self.logger)
+            self.active_slice = None
             self.gui.update()
         except:
             self.logger.error(sys.exc_info()[0])

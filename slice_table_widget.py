@@ -6,12 +6,13 @@ from PyQt5.QtGui import QIcon , QPainter , QPixmap
 
 import logging
 
-name_col = {"col": 0, "header": "Image_ID"}
-rect_col = {"col": 1, "header": "Rect"}
-img_col = {"col": 2, "header": "Img"}
+active_col = {"col": 0, "header": "Active"}
+name_col = {"col": 1, "header": "Name"}
+rect_col = {"col": 2, "header": "Rect"}
+img_col = {"col": 3, "header": "Img"}
+remove_col = {"col": 4, "header": "Del"}
 
-
-cols = [ name_col,rect_col,img_col]
+cols = [active_col, name_col,rect_col,img_col,remove_col]
 
 
 
@@ -28,18 +29,18 @@ class ImageWidget(QWidget):
         painter = QPainter(self)
         target=  QRect(0,0,self.width(), self.height())
         source=  QRect(0,0,self.image.width(), self.image.height())
-
         painter.drawPixmap(target, self.image, source)
 
 
 
-class MicroTableWidget(QTableWidget):
+class SliceTableWidget(QTableWidget):
 
     def __init__(self, app, logger=None):
         self.num_cols = len(cols)
 
         self.image_width = 300
         self.image_height = 300
+
 
         self.headers = [""] * self.num_cols
         for col in cols:
@@ -53,60 +54,70 @@ class MicroTableWidget(QTableWidget):
             self.logger.setLevel(logging.ERROR)
             ch = logging.StreamHandler()
             self.logger.addHandler(ch)
+        self.set_app(app)
 
         self.cellClicked.connect(self.cell_clicked)
-        self.set_app(app)
+        self.cellPressed.connect(self.cell_pressed)
+
 
     def set_app(self, app):
         self.app=app
         self.update_table_widget()
 
-
     def update_table_widget(self):
         try:
-            if not self.app.reconstruction is None:
-                micro_photos = self.app.reconstruction.micro_photos
+            if self.app.reconstruction is None:
+                self.logger.info(f"Reconstruction is None")
+                slices = []
             else:
-                micro_photos =[]
+                slices = self.app.reconstruction.slices
+                macro_photo=self.app.reconstruction.macro_photo
+                self.logger.info(f"slices = {slices} ")
 
-
-
-            present_in_app = [False for i in range(len(micro_photos))]
+            present_in_app = [False for i in range(len(slices))]
             present_in_table_widget = [False for i in range(self.rowCount())]
 
-            self.logger.info(f"We have {len(present_in_table_widget)} micro photos in the Micro Table Widget")
-            self.logger.info(f"We have {len(present_in_app)} micro photos in the application")
 
-            for i, micro_photo in enumerate(micro_photos):
+            self.logger.info(f"We have {len(present_in_table_widget)} slices in the Slice Table Widget")
+            self.logger.info(f"We have {len(present_in_app)} slices in the application")
+
+            for i, slice in enumerate(slices):
                 for j in range(self.rowCount()):
-                    if self.item(j, name_col['col']).micro_photo == micro_photo:
+                    if self.item(j, name_col['col']).slice == slice:
+                        self.logger.info(f"Slice {slice.id} already present in  SLice Table Widget")
                         present_in_app[i] = True
                         present_in_table_widget[j] = True
 
-            for i, micro_photo_id in enumerate(micro_photos):
-                micro_photo=micro_photos[micro_photo_id]
+            for i, slice in enumerate(slices):
                 if not present_in_app[i]:
-                    self.logger.info(f"Adding micro photo {micro_photo} to Micro Table Widget")
+                    self.logger.info(f"Adding Slice {slice.id} to SLice Table Widget")
                     row_to_add = self.rowCount()
                     self.setRowCount(row_to_add + 1)
                     self.setRowHeight(row_to_add, self.image_height)
-                    item = QTableWidgetItem(f"{micro_photo.slide_score_image_id}")
-                    item.micro_photo = micro_photo
+                    item = QTableWidgetItem(f"{slice.id}")
+                    item.slice = slice
                     self.setItem(row_to_add, name_col['col'], item)
-                    if not hasattr(micro_photo, "size"):
-                        self.logger.error("alert")
-                    item = QTableWidgetItem(f"{micro_photo.size}")
-                    item.micro_photo = micro_photo
+
+                    item = QTableWidgetItem(f"{list(slice.rect.getCoords())}")
+                    item.slice = slice
                     self.setItem(row_to_add, rect_col['col'], item)
 
                     item = QTableWidgetItem(f"")
-                    item.micro_photo = micro_photo
+                    item.slice = slice
                     self.setItem(row_to_add, img_col['col'], item)
-                    self.setCellWidget(row_to_add, img_col['col'], ImageWidget(image = micro_photo.pixmap, parent = self))
+                    self.setCellWidget(row_to_add, img_col['col'], ImageWidget(image = macro_photo.copy(slice.rect), parent = self))
+
+                    remove_item = QTableWidgetItem("")
+                    remove_item.setIcon(self.style().standardIcon(getattr(QStyle, "SP_TrashIcon")))
+                    remove_item.slice = slice
+                    self.setItem(row_to_add, remove_col['col'], remove_item)
+
+
+
 
             for j in range(len(present_in_table_widget)-1,-1,-1):
                 if not present_in_table_widget[j]:
-                    self.logger.info(f"Remove micro photo {self.item(j, name_col['col'])} from Micro Table Widget")
+                    self.logger.info(f"Remove Slice {self.item(j, name_col['col'])} from Slice Table Widget")
                     self.removeRow(j)
 
             self.setHorizontalHeaderLabels(self.headers)
@@ -116,22 +127,30 @@ class MicroTableWidget(QTableWidget):
             header.setSectionResizeMode(self.num_cols - 1, QHeaderView.Stretch)
 
 
-
-
         except:
             self.logger.error(sys.exc_info()[0])
             self.logger.error(traceback.format_exc())
 
 
+    def cell_pressed(self, row, col):
+        if col == active_col['col']:
+            self.logger.info(f"activate  {row}")
+            self.app.set_active_contour(self.item(row, name_col['col']).slice)
 
     def cell_clicked(self, row, col):
         try:
-
+            self.logger.debug(f"clicked  {row},  {col}")
             item = self.item(row, col)
-            self.app.reconstruction.active_micro_photo=item.micro_photo.slide_score_image_id
-            self.logger.info(f"{self.app.reconstruction.active_micro_photo}")
-            self.app.gui.tabs_left.setCurrentIndex(1)
+            if col in  [name_col['col'], img_col['col']] :
+                self.logger.info(f"{item.slice.rect}")
+                self.app.set_active_slice_by_id(item.slice.id)
+                self.app.gui.tabs_left.setCurrentIndex(1)
 
+
+            if col == remove_col['col']:
+                id = item.slice.id
+                self.removeRow(row)
+                self.app.delete_slice(id=id)
 
         except:
             self.logger.error(sys.exc_info()[0])

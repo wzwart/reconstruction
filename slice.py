@@ -64,24 +64,30 @@ class Slice():
         self.logger=logger
         return
 
-    def paint(self, painter, size):
+    def paint(self, painter, size,show_traces):
         try:
-            self.logger.info("panting")
             photo = self.slice_photo
             size_draw = QSize(min(size.width(), photo.width()), min(size.height(), photo.height()))
 
-            painter.drawPixmap(QRect(QPoint(0, 0), size_draw), photo, QRect(QPoint(0, 0), size_draw))
+            if not show_traces and not self.mask is None:
+                arr_photo = self.get_np_array(photo)
+                arr_photo = cv2.cvtColor(arr_photo, cv2.COLOR_BGR2RGB)
+                exp_mask=np.expand_dims(self.mask, -1)
+                arr_photo=np.concatenate((arr_photo,255*exp_mask),axis=2).astype(np.uint8)
+                qimage = QImage(arr_photo, arr_photo.shape[1], arr_photo.shape[0],
+                                QImage.Format_ARGB32)
+                pixmap = QPixmap(qimage)
+                painter.drawPixmap(QRect(QPoint(0, 0), size_draw), pixmap, QRect(QPoint(0, 0), size_draw))
 
-
-            pen=QPen()
-            pen.setWidth(self.pen_width)
-            pen.setBrush(Qt.green)
-            pen.setCapStyle(Qt.RoundCap)
-
-            painter.setPen(pen)
-
-            for trace in self.traces:
-                painter.drawPolyline(QPolygon(trace))
+            else:
+                painter.drawPixmap(QRect(QPoint(0, 0), size_draw), photo, QRect(QPoint(0, 0), size_draw))
+                pen=QPen()
+                pen.setWidth(self.pen_width)
+                pen.setBrush(Qt.green)
+                pen.setCapStyle(Qt.RoundCap)
+                painter.setPen(pen)
+                for trace in self.traces:
+                    painter.drawPolyline(QPolygon(trace))
 
 
         except:
@@ -93,27 +99,18 @@ class Slice():
     def paint_2(self, painter, size):
         try:
             photo = self.slice_photo
-            arr_photo=self.get_np_array(photo)
-            arr_photo = cv2.cvtColor(arr_photo, cv2.COLOR_BGR2RGB)
+            size_draw = QSize(min(size.width(), photo.width()), min(size.height(), photo.height()))
+
             if not self.mask is None:
-                self.logger.info(f"shape photo {arr_photo.shape}")
+                arr_photo = self.get_np_array(photo)
+                arr_photo = cv2.cvtColor(arr_photo, cv2.COLOR_BGR2RGB)
                 exp_mask=np.expand_dims(self.mask, -1)
-                self.logger.info(f"shape mask {exp_mask.shape}")
-
-
-
                 arr_photo=np.concatenate((arr_photo,255*exp_mask),axis=2).astype(np.uint8)
-                self.logger.info(f"arr_photo {arr_photo.shape}")
-
-
                 qimage = QImage(arr_photo, arr_photo.shape[1], arr_photo.shape[0],
                                 QImage.Format_ARGB32)
                 pixmap = QPixmap(qimage)
 
-            size_draw = QSize(min(size.width(), photo.width()), min(size.height(), photo.height()))
             painter.drawPixmap(QRect(QPoint(0, 0), size_draw), pixmap, QRect(QPoint(0, 0), size_draw))
-
-
 
         except:
             self.logger.error(sys.exc_info()[0])
@@ -282,3 +279,78 @@ class Slice():
 
         return inner_mask, outer_mask
 
+    @classmethod
+    def create_from_dict(cls, data,
+                         macro_photo, 
+                         logger):
+
+
+        rect=QRect(data['rect'][0],data['rect'][1],data['rect'][2],data['rect'][3])
+        obj=Slice.create_from_photo(macro_photo=macro_photo, rect=rect, id=data['id'], logger=logger)
+
+        if 'mask_ones' in data and'mask_minus_ones' in data:
+            obj.mask = obj.reverse_compressed_json_mask(rect, data['mask_ones'], data['mask_minus_ones'])
+            obj.logger.info(f"Shape {obj.mask.shape}")
+        else:
+            obj.mask = None
+        obj.logger.info(f"rect {rect}")
+        obj.traces =[[QPoint(point[0], point[1]) for point in trace] for trace in data['traces']]
+        obj.pen_width=data['pen_width']
+        obj.max_num_train_pixels=data['max_num_train_pixels'] 
+        return obj
+
+    def reverse_compressed_json_mask(self, rect, mask_ones, mask_minus_ones):
+        mask_ones=mask_ones.copy()
+        mask_minus_ones=mask_minus_ones.copy()
+        mask_ones[0] += 1
+        mask_minus_ones[0] += 1
+        mask = np.zeros((rect.height(), rect.width()), dtype=np.int8).ravel()
+        mask[np.nancumsum(mask_minus_ones)] = -1
+        mask[np.nancumsum(mask_ones)] = 1
+        mask = np.nancumsum(mask)
+        mask = mask.reshape((rect.height(), rect.width()))
+        return mask
+
+
+    def get_dict_for_serialisation(self):
+        '''
+        extract the  contour data as a dict for serialisation.
+        :return: a dict
+        '''
+
+        data = {}
+        self.logger.info(f"rect {self.rect}")
+
+        if 'rect' is not None:
+            data['rect']=self.rect.getRect()
+        else:
+            data['rect'] = None
+
+
+        if self.mask is not None:
+            self.logger.info(f"Shape {self.mask.shape}")
+            d=np.diff(self.mask.ravel())
+            ones=np.diff([0]+list(np.where(d == 1)[0]))
+            minus_ones = np.diff([0]+list(np.where(d == -1)[0]))
+            data['mask_ones']=[int(i) for i in list(ones)]
+            data['mask_minus_ones']=[int(i) for i in list(minus_ones)]
+
+            reverse_mask= self.reverse_compressed_json_mask(self.rect, data['mask_ones'], data['mask_minus_ones'])
+
+            res= np.isclose(reverse_mask,self.mask).all()
+            self.logger.info(f"is OK {res}")
+
+
+
+
+        else:
+            data['mask'] = self.mask
+        # self.logger.info(f"mask :{data['mask']}")
+        if len (self.traces)>0 :
+            data['traces']=[[(point.x(),point.y()) for point in trace] for trace in self.traces]
+        else:
+            data['traces']=self.traces
+        data['id']=self.id
+        data['pen_width']=self.pen_width
+        data['max_num_train_pixels']=self.max_num_train_pixels 
+        return data
