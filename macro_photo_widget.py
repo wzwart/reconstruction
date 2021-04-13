@@ -33,26 +33,26 @@ class MacroPhotoWidget(QLabel):
         alt = bool(modifiers & Qt.AltModifier)
 
         if event.button() == Qt.LeftButton and not alt:
-            self.origin_rubber_band = QPoint(event.pos())
+            self.origin_rubber_band = QPoint(event.coupe_pos())
             self.rubberBand.setGeometry(QRect(self.origin_rubber_band, QSize()))
             self.rubberBand.show()
 
         if event.button() == Qt.RightButton:
-            self.origin_position = QPoint(event.pos())
+            self.origin_position = QPoint(event.coupe_pos())
 
         if event.button() == Qt.LeftButton and alt:
-            self.app.add_ruler_end(event.pos()+self.position)
+            self.app.add_ruler_end(event.coupe_pos() + self.position)
 
 
 
     def mouseMoveEvent(self, event):
 
         if not self.origin_rubber_band.isNull():
-            self.rubberBand.setGeometry(QRect(self.origin_rubber_band, event.pos()).normalized())
+            self.rubberBand.setGeometry(QRect(self.origin_rubber_band, event.coupe_pos()).normalized())
 
         if event.buttons() & Qt.RightButton:
-            self.position = self.position + self.origin_position - QPoint(event.pos())
-            self.origin_position = event.pos()
+            self.position = self.position + self.origin_position - QPoint(event.coupe_pos())
+            self.origin_position = event.coupe_pos()
             self.paint()
 
 

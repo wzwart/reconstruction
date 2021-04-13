@@ -26,7 +26,7 @@ scene = pywavefront.Wavefront(scan_3d_obj_file, create_materials=True)
 len(scene.vertices)
 # print(scene.__dict__)
 print(scene.parser.__dict__.keys())
-# print(scene.parser.__dict__['file_name'])
+# print(scene.parser.__dict__['pickle_file_path'])
 
 # scene.parser.__dict__['mesh'].__dict__
 # print(len(scene.vertices))

@@ -2,14 +2,39 @@ from PIL import Image
 import numpy as np
 import requests
 import io
-import logging,sys,traceback
-import matplotlib.pyplot as plt
-from PyQt5.QtGui import QPixmap, QImage, QColor
-from PyQt5.QtCore import QPoint, QRect, QSize, Qt
+import sys,traceback
+from PyQt5.QtGui import QPixmap, QImage
 
 
-class MicroPhoto:
+class Coupe:
+
+    '''
+    The Coupe Class contains the coupes (or "slides" as they are also called)
+    Each coupe is defined by:
+    a study_id
+    a case_id
+    an image_id
+
+
+    The coupe can interact autonomously with the Slide Score API
+    It uses  get_meta() to get the basic meta data from the API, plus additional data such that it can
+
+
+
+
+    '''
+
     def __init__(self, slide_score_api,   slide_score_study_id, slide_score_case_id, slide_score_image_id,parent=None, logger=None):
+
+        '''
+
+        :param slide_score_api:
+        :param slide_score_study_id:
+        :param slide_score_case_id:
+        :param slide_score_image_id:
+        :param parent:
+        :param logger:
+        '''
 
         self.logger=logger
         self.parent=parent
@@ -24,35 +49,34 @@ class MicroPhoto:
 
 
     @classmethod
-    def create_copy(cls, micro_photo, parent=None, logger=None):
-        obj=cls(slide_score_api=micro_photo.slide_score_api, slide_score_study_id=micro_photo.slide_score_study_id, slide_score_case_id=micro_photo.slide_score_case_id, slide_score_image_id=micro_photo.slide_score_image_id, parent = parent, logger = logger)
-        obj.img=micro_photo.img
-        obj.meta_data=micro_photo.meta_data
+    def create_copy(cls, coupe, parent=None, logger=None):
+        obj=cls(slide_score_api=coupe.slide_score_api, slide_score_study_id=coupe.slide_score_study_id, slide_score_case_id=coupe.slide_score_case_id, slide_score_image_id=coupe.slide_score_image_id, parent = parent, logger = logger)
+        obj.img=coupe.img
+        obj.meta_data=coupe.meta_data
         obj.process_meta_data()
         obj.get_pixmaps_from_img()
         return obj
 
     def get_image(self):
-
+        '''
+        retreiving the image from slide score, using the tiles
+        the image is stored in self.img, which is a numpy array
+        then get_pixmaps_from_img()  is called to get the QPicMap
+        :return:
+        '''
 
         try:
-
             zoom_level = 8
             rect = [[0, 0], [self.width, self.height]]
-
             max_level = max(self.width, self.height).bit_length()
-
             x_from = int(rect[0][0] // (self.tile_width * 2 ** zoom_level))
             x_to = int((rect[1][0]) // (self.tile_width * 2 ** zoom_level)) + 1
             y_from = int(rect[0][1] // (self.tile_height * 2 ** zoom_level))
             y_to = int((rect[1][1]) // (self.tile_height * 2 ** zoom_level)) + 1
-
             img_width = (rect[1][0] - rect[0][0]) // (2 ** zoom_level) + 1
             img_height = (rect[1][1] - rect[0][1]) // (2 ** zoom_level) + 1
             self.img = np.zeros((img_height, img_width, 3), dtype=np.uint8)
-            self.logger.info(f"Getting imgae {self.slide_score_image_id}. Size: {img_width} x {img_height}")
-
-
+            self.logger.info(f"Getting image {self.slide_score_image_id}. Size: {img_width} x {img_height}")
 
             for x in range(x_from, x_to):
 
@@ -86,21 +110,21 @@ class MicroPhoto:
                     self.img[top_img:bottom_img + 1, left_img: right_img + 1] = tile[top_tile:bottom_tile + 1,
                                                                            left_tile: right_tile + 1]
 
-
-
         except:
 
             self.img=np.ones((100,100,3), dtype=np.uint8) * np.array([50,50,250], dtype=np.uint8).reshape((1,1,3))
             self.logger.error(sys.exc_info()[0])
             self.logger.error(traceback.format_exc())
-
         self.get_pixmaps_from_img()
 
 
     def get_pixmaps_from_img(self):
         '''
-        create pixmap and transparent pixmap from self.img
-        :return:
+        Creates self.pixmap from numpy array self.img. self.pixmap is a QPixmap which can be used directly
+        by PyQt for rendering.
+        Also creates self.trans_pixmap. This is similar to self.pixmap, but now it is semi transparent, such that
+        it can be used as overlay over the slices for positioning of the coupes.
+        :return: None
         '''
         try:
             qimage = QImage(self.img, self.img.shape[1], self.img.shape[0], self.img.shape[1] * 3, QImage.Format_RGB888)
@@ -115,6 +139,7 @@ class MicroPhoto:
             qimage_trans = QImage(arr_photo, arr_photo.shape[1], arr_photo.shape[0],
                                   QImage.Format_ARGB32)
             self.pixmap_trans = QPixmap(qimage_trans)
+            return
         except:
 
             self.logger.error(sys.exc_info()[0])
@@ -122,6 +147,10 @@ class MicroPhoto:
 
 
     def get_metadata(self):
+        '''
+        reads the meta data for the coupe from the Slide Score API.
+        :return:
+        '''
         response = self.slide_score_api.perform_request("GetImageMetadata?imageId=" + str(self.slide_score_image_id), None, method="GET")
         rjson = response.json()
         self.meta_data = rjson['metadata']
@@ -131,9 +160,14 @@ class MicroPhoto:
         rjson = response.json()
         self.meta_data['cookie']=rjson['cookiePart']
         self.meta_data['url']=rjson['urlPart']
+        self.process_meta_data()
         return self.meta_data
 
     def process_meta_data(self):
+        '''
+        and now store the meta data we received from Slide Score as member variables
+        :return:
+        '''
         self.tile_width=self.meta_data['level0TileWidth']
         self.tile_height=self.meta_data['level0TileHeight']
         self.width=self.meta_data['level0Width']
@@ -145,8 +179,12 @@ class MicroPhoto:
         self.url=self.meta_data['url']
 
 
-
     def remove_non_serializable_objects(self):
+        '''
+        removing the non serializable objects.
+        Used for storing the overall reconstruction as a pickle object
+        :return: None
+        '''
         del self.parent
         del self.logger
         del self.slide_score_api
@@ -155,6 +193,14 @@ class MicroPhoto:
         return
 
     def restore_non_serializable_objects(self, parent, logger, slide_score_api):
+        '''
+        restoring the non serializable objects
+        Used for storing the overall reconstruction as a pickle object
+        :param parent: the parent
+        :param logger: the logger
+        :param slide_score_api: the slide score api
+        :return: None
+        '''
         self.parent=parent
         self.logger=logger
         self.slide_score_api=slide_score_api
@@ -162,13 +208,9 @@ class MicroPhoto:
         return
 
 
-
-
-
     @classmethod
     def create_from_slide_score(cls, slide_score_api, slide_score_study_id, slide_score_case_id,  slide_score_image_id,  parent=None, logger=None):
         obj=cls(slide_score_api=slide_score_api, slide_score_study_id=slide_score_study_id, slide_score_case_id=slide_score_case_id, slide_score_image_id=slide_score_image_id, parent = parent, logger = logger)
         obj.get_metadata()
-        obj.process_meta_data()
         obj.get_image()
         return obj

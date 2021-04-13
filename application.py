@@ -1,60 +1,52 @@
-import logging 
+import configparser
+import importlib
+import json
+import logging
+import re
 import sys
 import traceback
-import importlib
 from pathlib import Path
+
 from reconstruction import Reconstruction
-import configparser
 from slide_score_api.slidescore import APIClient
-import json
-
-from _ctypes import PyObj_FromPtr
-import json
-import re
-
-class MyJSONEncoder(json.JSONEncoder):
-
-  def iterencode(self, o, _one_shot=False):
-    list_lvl = 0
-    for s in super(MyJSONEncoder, self).iterencode(o, _one_shot=_one_shot):
-      if s.startswith('['):
-        list_lvl += 1
-        s = s.replace('\n', '').rstrip()
-      elif 0 < list_lvl:
-        s = s.replace('\n', '').rstrip()
-        if s and s[-1] == ',':
-          s = s[:-1] + self.item_separator
-        elif s and s[-1] == ':':
-          s = s[:-1] + self.key_separator
-      if s.endswith(']'):
-        list_lvl -= 1
-      yield s
-
-
-
-class GuiLogger(logging.Handler):
-    def emit(self, record):
-        self.edit.append(self.format(record))  # implementation of append_line omitted
 
 
 class Application():
-    def __init__(self, gui,  config_file="config.ini",logger= None ):
+    '''
+
+    The Application class is the interface between the Reconstruction Object and the ReconstructionGui object
+    The Application is the only means for the Reconstruction object and the ReconstructionGui object to interact with each other
+
+    All methods in the application object use a try: /except: structure.
+    This is to catch  errors . It allows the gui to stay alive, even when something goes wrong in the
+    application or the reconstruction below it.
+
+    The application is configured through the config file (config.ini)
+
+
+    '''
+
+    def __init__(self, gui, config_file="config.ini", logger=None):
+        '''
+        :param gui: the gui
+        :param config_file:
+        :param logger: The logger should be left to None, unless we are re-using an existing logger,
+        when performing a reload.
+        '''
 
         self.gui = gui
         self.config_file = config_file
         self.read_config()
         self.write_config()
 
+        # the reconstruction object
         self.reconstruction = None
+        # the active slice is used, to track which slice is being rendered on the slice_photo_widget
         self.active_slice = None
 
         if logger is None:
             self.logger = logging.getLogger('session data main')
             self.logger.setLevel(logging.DEBUG)
-            h = GuiLogger()
-            #todo consider whether gui.logger_box should be explicitly mentioned here
-            h.edit = self.gui.logger_box
-            logging.getLogger().addHandler(h)
             ch = logging.StreamHandler(sys.stdout)
             ch.setLevel(logging.DEBUG)
             formatter = logging.Formatter('%(levelname)s - %(message)s')
@@ -68,19 +60,28 @@ class Application():
             self.logger.addHandler(ch)
             self.logger.addHandler(ch_file)
         else:
-            self.logger=logger
+            self.logger = logger
 
+        self.init_slidescore_api()
 
     @classmethod
     def create_copy(cls, application):
+        '''
+        creating a copy of the application while reloading the code for the reconstruction
+        :param application: the application to copy
+        :return:
+        '''
         try:
             obj = cls(gui=application.gui, config_file=application.config_file, logger=application.logger)
-            obj.init_slidescore_api()
+
             import reconstruction
             obj.logger.info("Reloading Reconstruction")
             importlib.reload(reconstruction)
             from reconstruction import Reconstruction
-            obj.reconstruction = Reconstruction.create_copy(reconstruction=application.reconstruction, parent=obj, logger=application.logger, slide_score_api=application.slide_score_api, slide_score_user=application.slide_score_user)
+            obj.reconstruction = Reconstruction.create_copy(reconstruction=application.reconstruction, parent=obj,
+                                                            logger=application.logger,
+                                                            slide_score_api=application.slide_score_api,
+                                                            slide_score_user=application.slide_score_user)
             obj.reconstruction.set_macro_photo(macro_photo_path=application.macro_photo_path)
             if application.active_slice is None:
                 obj.set_active_slice_by_id(-1)
@@ -103,16 +104,18 @@ class Application():
     def start(self):
         try:
             self.logger.info("Starting Application..")
-            self.init_slidescore_api()
 
             if self.auto_reload:
-                self.load_reconstruction_from_pickle(file_name=r"reconstr.pkl")
+                self.load_reconstruction_from_pickle()
 
             else:
-                self.reconstruction = Reconstruction(slide_score_api=self.slide_score_api, slide_score_user= self.slide_score_user, parent= self, logger=self.logger)
-                self.reconstruction.set_slide_score_study_and_case_id(slide_score_study_id=self.slide_score_study_id, slide_score_case_id=self.slide_score_case_id)
+                self.reconstruction = Reconstruction(slide_score_api=self.slide_score_api,
+                                                     slide_score_user=self.slide_score_user, parent=self,
+                                                     logger=self.logger)
+                self.reconstruction.set_slide_score_study_and_case_id(slide_score_study_id=self.slide_score_study_id,
+                                                                      slide_score_case_id=self.slide_score_case_id)
                 self.reconstruction.set_macro_photo(macro_photo_path=self.macro_photo_path)
-                self.reconstruction.load_micro_photos(max_cnt_micro_photos= self.max_cnt_micro_photos)
+                self.reconstruction.load_coupes(max_cnt_coupes=self.max_cnt_coupes)
         except:
             self.logger.error(
                 f'Unexpected error: {sys.exc_info()[0]} \n {traceback.format_exc()}')
@@ -147,28 +150,26 @@ class Application():
             self.slide_score_api_token = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJOYW1lIjoiV2ltIEFQSSBhY2Nlc3MiLCJJRCI6IjQwIiwiVmVyc2lvbiI6IjEuMCIsIkNhbkNyZWF0ZVVwbG9hZEZvbGRlcnMiOiJGYWxzZSIsIkNhblVwbG9hZCI6IkZhbHNlIiwiQ2FuRG93bmxvYWRTbGlkZXMiOiJUcnVlIiwiQ2FuRGVsZXRlU2xpZGVzIjoiRmFsc2UiLCJDYW5VcGxvYWRPbmx5SW5Gb2xkZXJzIjoiIiwiQ2FuUmVhZE9ubHlTdHVkaWVzIjoiIiwiQ2FuTW9kaWZ5T25seVN0dWRpZXMiOiIiLCJDYW5HZXRDb25maWciOiJUcnVlIiwiQ2FuR2V0UGl4ZWxzIjoiVHJ1ZSIsIkNhblVwbG9hZFNjb3JlcyI6IkZhbHNlIiwiQ2FuQ3JlYXRlU3R1ZGllcyI6IkZhbHNlIiwiQ2FuUmVpbXBvcnRTdHVkaWVzIjoiRmFsc2UiLCJDYW5EZWxldGVPd25lZFN0dWRpZXMiOiJGYWxzZSIsIkNhbkdldFNjb3JlcyI6IlRydWUiLCJDYW5HZXRBbnlTY29yZXMiOiJUcnVlIiwibmJmIjoxNjE2NDkxNTE1LCJleHAiOjE2NDc5OTAwMDAsImlhdCI6MTYxNjQ5MTUxNX0.duMtd4ZHkyfDSEP2E5MHvnamggZutoCFuYuARn_M_xo"
             pass
 
-
         try:
-            self.slide_score_study_id = int (parser.get("SLIDESCORE", "study_id"))
+            self.slide_score_study_id = int(parser.get("SLIDESCORE", "study_id"))
         except (configparser.NoOptionError, configparser.NoSectionError):
             self.slide_score_study_id = 2
             pass
 
         try:
-            self.slide_score_case_id = int (parser.get("SLIDESCORE", "case_id"))
+            self.slide_score_case_id = int(parser.get("SLIDESCORE", "case_id"))
         except (configparser.NoOptionError, configparser.NoSectionError):
             self.slide_score_case_id = 13
             pass
 
         try:
             self.auto_reload = (parser.get("APPLICATION", "auto_reload")) in ["true",
-                                                                                                            "True", "1",
-                                                                                                            "yes",
-                                                                                                            "Yes"]
-        except (configparser.NoOptionError ,  configparser.NoSectionError):
+                                                                              "True", "1",
+                                                                              "yes",
+                                                                              "Yes"]
+        except (configparser.NoOptionError, configparser.NoSectionError):
             self.auto_reload = False
             pass
-
 
         try:
             self.macro_photo_path = parser.get("RECONSTRUCTION", "macro_photo_path")
@@ -177,9 +178,9 @@ class Application():
             pass
 
         try:
-            self.max_cnt_micro_photos = int(parser.get("RECONSTRUCTION", "max_cnt_micro_photos"))
+            self.max_cnt_coupes = int(parser.get("RECONSTRUCTION", "max_cnt_coupes"))
         except (configparser.NoOptionError, configparser.NoSectionError):
-            self.max_cnt_micro_photos = 2
+            self.max_cnt_coupes = 2
             pass
 
         try:
@@ -188,6 +189,11 @@ class Application():
             self.json_file_path = r"reconstruct.json"
             pass
 
+        try:
+            self.pickle_file_path = parser.get("FILES", "pickle_file_path")
+        except (configparser.NoOptionError, configparser.NoSectionError):
+            self.pickle_file_path = r"reconstr.pkl"
+            pass
 
     def write_config(self):
         try:
@@ -202,9 +208,10 @@ class Application():
             parser.set("APPLICATION", "auto_reload", str(self.auto_reload))
             parser.add_section("RECONSTRUCTION")
             parser.set("RECONSTRUCTION", "macro_photo_path", str(self.macro_photo_path))
-            parser.set("RECONSTRUCTION", "max_cnt_micro_photos", str(self.max_cnt_micro_photos))
+            parser.set("RECONSTRUCTION", "max_cnt_coupes", str(self.max_cnt_coupes))
             parser.add_section("FILES")
             parser.set("FILES", "json_file_path", str(self.json_file_path))
+            parser.set("FILES", "pickle_file_path", str(self.pickle_file_path))
             f = open(self.config_file, "w")
             parser.write(f)
             f.close()
@@ -214,6 +221,11 @@ class Application():
             pass
 
     def add_slice(self, rect):
+        '''
+        Add a slice to the slices, based on the rect bbox. Also sets the newly created slices to be the active slice.
+        :param rect:QRect object containing the bbox of the slice in the macro_photo
+        :return:
+        '''
         try:
             new_slice = self.reconstruction.add_slice_from_rect(rect=rect)
             self.set_active_slice_by_id(new_slice.id)
@@ -223,38 +235,40 @@ class Application():
             self.logger.error(sys.exc_info()[0])
             self.logger.error(traceback.format_exc())
 
-
     def delete_slice(self, id):
         try:
-            new_active_slice= self.reconstruction.delete_slice(id)
+            new_active_slice = self.reconstruction.delete_slice(id)
             if new_active_slice is None:
                 self.set_active_slice_by_id(-1)
             else:
                 self.set_active_slice_by_id(new_active_slice.id)
-        #note that set_active_slice already performs a gui update
+        # note that set_active_slice already performs a gui update
         except:
             self.logger.error(sys.exc_info()[0])
             self.logger.error(traceback.format_exc())
 
-    def set_active_slice_by_id(self,id=-1):
+    def set_active_slice_by_id(self, id=-1):
         try:
             if id < 0:
                 self.gui.slice_photo_widget.set_slice(slice=None)
                 self.gui.update()
             else:
                 for slice in self.reconstruction.slices:
-                    if slice.id==id:
+                    if slice.id == id:
                         self.active_slice = slice
                         self.logger.info(f"setting slice to {self.active_slice.id}")
-                        self.gui.slice_photo_widget.set_show_taces(True)
+                        self.gui.slice_photo_widget.set_show_traces(True)
                         self.gui.slice_photo_widget.set_slice(slice=self.active_slice)
                         self.gui.update()
         except:
             self.logger.error(sys.exc_info()[0])
             self.logger.error(traceback.format_exc())
 
-
     def remove_latest_trace_from_active_slice(self):
+        '''
+
+        :return:
+        '''
         try:
             self.active_slice.remove_latest_trace()
             self.gui.update()
@@ -262,26 +276,39 @@ class Application():
             self.logger.error(sys.exc_info()[0])
             self.logger.error(traceback.format_exc())
 
-
-    def load_reconstruction_from_pickle(self,file_name):
+    def load_reconstruction_from_pickle(self):
         try:
-            self.reconstruction = Reconstruction.load_from_pickle(file_name=file_name, parent=self, logger=self.logger, macro_photo_path=self.macro_photo_path)
+
+            self.reconstruction = Reconstruction.load_from_pickle(pickle_file_path=self.pickle_file_path, parent=self, logger=self.logger,
+                                                                  macro_photo_path=self.macro_photo_path)
             self.gui.update()
         except:
             self.logger.error(sys.exc_info()[0])
             self.logger.error(traceback.format_exc())
 
-    def calc_mask(self):
+    def save_reconstruction_to_pickle(self):
         try:
-            self.logger.info("Calc Mask")
-            self.active_slice.calc_mask()
-            self.gui.slice_photo_widget.set_show_taces(False)
+            self.reconstruction.save_to_pickle(pickle_file_path=self.pickle_file_path)
+        except:
+            self.logger.error(sys.exc_info()[0])
+            self.logger.error(traceback.format_exc())
+
+
+    def calc_foreground_background_mask(self):
+        try:
+            self.logger.info("Calc Foreground/Background Mask")
+            self.active_slice.calc_foreground_background_mask()
+            self.gui.slice_photo_widget.set_show_traces(False)
             self.gui.update()
         except:
             self.logger.error(sys.exc_info()[0])
             self.logger.error(traceback.format_exc())
 
     def add_ruler_end(self, ruler_end_point):
+        '''
+        :param ruler_end_point: the ruler_end_point to be added to the reconstruction
+        :return: None
+        '''
         try:
             self.logger.info(f"{ruler_end_point}")
             self.reconstruction.add_ruler_point(ruler_end_point)
@@ -291,12 +318,18 @@ class Application():
             self.logger.error(traceback.format_exc())
 
     def save_reconstruction_as_json(self):
+        '''
+        Saving the reconstruction as json
+        :return:
+        '''
         try:
             data = self.reconstruction.get_dict_for_serialisation()
-            s= json.dumps(data,  indent='\t')
-            s = re.sub(',$\n^([\t]+)(\w+)' , r",\2", s , flags=re.M)
-            s = re.sub('\[$\n^([\t]+)' , r"[", s , flags=re.M)
-            s = re.sub('$\n^([\t]+)\]' , r"]", s , flags=re.M)
+
+            s = json.dumps(data, indent='\t')
+            # the section below removes some of the white spacing and new lines to make the json shorter and more readable
+            s = re.sub(',$\n^([\t]+)(\w+)', r",\2", s, flags=re.M)
+            s = re.sub('\[$\n^([\t]+)', r"[", s, flags=re.M)
+            s = re.sub('$\n^([\t]+)\]', r"]", s, flags=re.M)
 
             with open(self.json_file_path, 'w') as outfile:
                 outfile.write(s)
@@ -307,17 +340,22 @@ class Application():
             self.logger.error(traceback.format_exc())
 
     def load_reconstruction_from_json(self):
+        '''
+        Loading the reconstruction from the json_file_path, and update the GUI
+        :return: None
+        '''
         try:
             self.logger.info(f"Loading reconstruction from {self.json_file_path}")
             with open(self.json_file_path) as json_file:
                 data = json.load(json_file)
-            self.reconstruction=Reconstruction.create_from_dict(data,
-            slide_score_api=self.slide_score_api,
-            slide_score_user=self.slide_score_user,
-            parent = self,
-                     logger = self.logger)
+            self.reconstruction = Reconstruction.create_from_dict(data,
+                                                                  slide_score_api=self.slide_score_api,
+                                                                  slide_score_user=self.slide_score_user,
+                                                                  parent=self,
+                                                                  logger=self.logger)
             self.active_slice = None
             self.gui.update()
+            return
         except:
             self.logger.error(sys.exc_info()[0])
             self.logger.error(traceback.format_exc())
